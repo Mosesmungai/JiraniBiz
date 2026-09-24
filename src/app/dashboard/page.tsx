@@ -1,19 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import { BusinessForm } from "@/components/business-form";
-
-const overview = [
-  { label: "Profile views", value: "2,480", change: "+18%" },
-  { label: "New leads", value: "84", change: "+12%" },
-  { label: "Bookings", value: "21", change: "+9%" },
-  { label: "Revenue", value: "KES 84k", change: "+22%" },
-];
-
-const recentLeads = [
-  { name: "Jane W", service: "Deep cleaning", status: "New", time: "2 mins ago" },
-  { name: "Khadija N", service: "Plumbing repair", status: "Contacted", time: "18 mins ago" },
-  { name: "Martin K", service: "Office sanitization", status: "Booked", time: "1 hour ago" },
-  { name: "Faith A", service: "Home maintenance", status: "New", time: "3 hours ago" },
-];
+import { getDashboardData } from "@/lib/store";
 
 const accessHierarchy = [
   { role: "Admin", description: "Approves listings, monitors compliance and payment disputes." },
@@ -22,16 +10,31 @@ const accessHierarchy = [
   { role: "Customer", description: "Searches, books, pays and leaves reviews after completion." },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const dashboard = await getDashboardData();
+  const overview = [
+    { label: "Profile views", value: "2,480", change: "+18%" },
+    { label: "New leads", value: String(dashboard.leadCount), change: "+12%" },
+    { label: "Businesses", value: String(dashboard.businessCount), change: "+9%" },
+    { label: "Revenue", value: `KES ${dashboard.totalRevenue.toLocaleString()}`, change: "+22%" },
+  ];
+
+  const recentLeads = dashboard.leads.map((lead) => ({
+    name: lead.name,
+    service: lead.businessName,
+    status: lead.status,
+    time: new Date(lead.createdAt).toLocaleDateString("en-KE", { day: "numeric", month: "short" }),
+  }));
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3 font-semibold text-slate-900">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold text-white">
-              N
-            </span>
-            Nairobi Local
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1 shadow-sm ring-1 ring-slate-200">
+              <Image src="/jiranibiz-logo.png" alt="JiraniBiz logo" width={50} height={50} className="h-full w-full object-contain" />
+            </div>
+            <span className="text-lg tracking-[-0.05em] text-slate-900">JiraniBiz</span>
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
@@ -79,24 +82,30 @@ export default function DashboardPage() {
                   <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3 font-medium">Customer</th>
-                      <th className="px-4 py-3 font-medium">Service</th>
+                      <th className="px-4 py-3 font-medium">Business</th>
                       <th className="px-4 py-3 font-medium">Status</th>
                       <th className="px-4 py-3 font-medium">Time</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {recentLeads.map((lead) => (
-                      <tr key={lead.name} className="border-t border-slate-200">
-                        <td className="px-4 py-4 font-medium text-slate-800">{lead.name}</td>
-                        <td className="px-4 py-4">{lead.service}</td>
-                        <td className="px-4 py-4">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${lead.status === "Booked" ? "bg-emerald-50 text-emerald-700" : lead.status === "Contacted" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700"}`}>
-                            {lead.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">{lead.time}</td>
+                    {recentLeads.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-10 text-center text-slate-500">No leads yet. New customer requests will appear here.</td>
                       </tr>
-                    ))}
+                    ) : (
+                      recentLeads.map((lead) => (
+                        <tr key={`${lead.name}-${lead.service}-${lead.time}`} className="border-t border-slate-200">
+                          <td className="px-4 py-4 font-medium text-slate-800">{lead.name}</td>
+                          <td className="px-4 py-4">{lead.service}</td>
+                          <td className="px-4 py-4">
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${lead.status === "Booked" ? "bg-emerald-50 text-emerald-700" : lead.status === "Contacted" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700"}`}>
+                              {lead.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">{lead.time}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -129,8 +138,8 @@ export default function DashboardPage() {
 
             <div className="rounded-[32px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
               <p className="text-xs uppercase tracking-[0.2em] text-slate-300">This month</p>
-              <div className="mt-4 text-4xl font-semibold">KES 84,200</div>
-              <p className="mt-3 text-sm text-slate-300">Generated from 21 bookings and 84 new leads.</p>
+              <div className="mt-4 text-4xl font-semibold">KES {dashboard.totalRevenue.toLocaleString()}</div>
+              <p className="mt-3 text-sm text-slate-300">Generated from {dashboard.businessCount} active listings and {dashboard.leadCount} customer leads.</p>
             </div>
           </aside>
         </div>

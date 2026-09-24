@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LeadRequestForm } from "@/components/lead-request-form";
-import { allBusinesses } from "@/lib/data";
+import { getBusinessBySlug } from "@/lib/store";
 
 export default async function BusinessPage({
   params,
@@ -10,7 +10,7 @@ export default async function BusinessPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const business = allBusinesses.find((item) => item.slug === slug);
+  const business = await getBusinessBySlug(slug);
 
   if (!business) {
     notFound();
@@ -23,10 +23,10 @@ export default async function BusinessPage({
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3 font-semibold text-slate-900">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold text-white">
-              N
-            </span>
-            Nairobi Local
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1 shadow-sm ring-1 ring-slate-200">
+              <Image src="/jiranibiz-logo.png" alt="JiraniBiz logo" width={52} height={52} className="h-full w-full object-contain" />
+            </div>
+            <span className="text-lg tracking-[-0.05em] text-slate-900">JiraniBiz</span>
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">

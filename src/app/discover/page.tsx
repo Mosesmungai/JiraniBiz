@@ -93,7 +93,7 @@ export default function DiscoverPage() {
         const distanceB = distanceBetween(userLocation.latitude, userLocation.longitude, b.location.latitude, b.location.longitude);
         return distanceA - distanceB;
       });
-  }, [query, radiusKm, selectedCategory, userLocation]);
+  }, [businesses, query, radiusKm, selectedCategory, userLocation]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
