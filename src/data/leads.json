@@ -1,0 +1,32 @@
+[
+  {
+    "id": "lead-1",
+    "businessSlug": "westgate-cleaning-co",
+    "businessName": "Westgate Cleaning Co.",
+    "name": "Jane W",
+    "phone": "+254 712 990 108",
+    "message": "I need a deep cleaning package for a 3 bedroom home before moving in.",
+    "status": "New",
+    "createdAt": "2026-09-24T06:00:00.000Z"
+  },
+  {
+    "id": "lead-2",
+    "businessSlug": "nairobi-flow-plumbing",
+    "businessName": "Nairobi Flow Plumbing",
+    "name": "Khadija N",
+    "phone": "+254 723 880 440",
+    "message": "Our kitchen sink is leaking badly and needs urgent attention.",
+    "status": "Contacted",
+    "createdAt": "2026-09-24T07:20:00.000Z"
+  },
+  {
+    "id": "lead-3",
+    "businessSlug": "harbor-looks-salon",
+    "businessName": "Harbor Looks Salon",
+    "name": "Faith A",
+    "phone": "+254 711 442 550",
+    "message": "Looking for bridal styling for this Saturday and a manicure session.",
+    "status": "Booked",
+    "createdAt": "2026-09-23T18:10:00.000Z"
+  }
+]
