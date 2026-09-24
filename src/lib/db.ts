@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 
 import { defaultBusinesses } from "@/lib/data";
 
@@ -9,8 +9,8 @@ const DB_PATH = path.join(DATA_DIR, "jiranibiz.db");
 
 mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new DatabaseSync(DB_PATH);
-db.exec("PRAGMA journal_mode = WAL;");
+const db = new Database(DB_PATH);
+db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS businesses (
     id TEXT PRIMARY KEY,
@@ -31,9 +31,13 @@ function seedBusinesses() {
     return;
   }
 
-  const insert = db.prepare("INSERT INTO businesses (id, slug, payload) VALUES (?, ?, ?)");
+  const insert = db.prepare("INSERT INTO businesses (id, slug, payload) VALUES (@id, @slug, @payload)");
   for (const business of defaultBusinesses) {
-    insert.run(business.id, business.slug, JSON.stringify(business));
+    insert.run({
+      id: business.id,
+      slug: business.slug,
+      payload: JSON.stringify(business),
+    });
   }
 }
 
