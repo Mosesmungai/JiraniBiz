@@ -1,8 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
-import { categories, featuredBusinesses, stats } from "@/lib/data";
+import { allBusinesses, categories, featuredBusinesses } from "@/lib/data";
 
 export default function Home() {
+  const averageRating = (allBusinesses.reduce((sum, business) => sum + business.rating, 0) / allBusinesses.length).toFixed(1);
+  const totalReviews = allBusinesses.reduce((sum, business) => sum + business.reviews, 0);
+  const countriesServed = new Set(allBusinesses.map((business) => business.country)).size;
+  const listingCount = allBusinesses.length;
+  const stats = [
+    { value: String(countriesServed), label: "countries served" },
+    { value: `${averageRating}/5`, label: "average business rating" },
+    { value: `${listingCount}`, label: "verified businesses" },
+    { value: `${totalReviews.toLocaleString()}`, label: "customer reviews" },
+  ];
+
   return (
     <div className="min-h-screen text-slate-900">
       <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/75 backdrop-blur-xl">
@@ -84,9 +95,9 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="rounded-3xl border border-slate-200 bg-slate-900 p-4 text-white">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-300">Live leads</div>
-                  <div className="mt-4 text-3xl font-semibold">1,248</div>
-                  <div className="mt-1 text-sm text-slate-300">New inquiries this week</div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-300">Active listings</div>
+                  <div className="mt-4 text-3xl font-semibold">{listingCount}</div>
+                  <div className="mt-1 text-sm text-slate-300">Business profiles live across the region</div>
                 </div>
                 <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <div className="mb-4 flex items-center justify-between">
@@ -151,7 +162,7 @@ export default function Home() {
                 <div className="mt-5 text-xl font-semibold text-slate-900">{category.name}</div>
                 <div className="mt-2 text-sm text-slate-600">{category.subtitle}</div>
                 <div className="mt-6 flex items-center justify-between">
-                  <div className="text-sm text-slate-500">1,200+ listings</div>
+                  <div className="text-sm text-slate-500">{listingCount} local listings</div>
                   <Link href="/discover" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700">
                     Browse
                   </Link>

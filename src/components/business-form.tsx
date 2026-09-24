@@ -8,6 +8,7 @@ export function BusinessForm() {
     category: "Cleaning",
     city: "Nairobi",
     area: "Westlands",
+    country: "Kenya",
     description: "",
     phone: "",
     email: "",
@@ -40,6 +41,7 @@ export function BusinessForm() {
       category: "Cleaning",
       city: "Nairobi",
       area: "Westlands",
+      country: "Kenya",
       description: "",
       phone: "",
       email: "",
@@ -90,6 +92,19 @@ export function BusinessForm() {
             placeholder="Nairobi"
             required
           />
+        </label>
+
+        <label className="text-sm font-medium text-slate-700">
+          Country
+          <select
+            value={form.country}
+            onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))}
+            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none focus:border-slate-300"
+          >
+            <option value="Kenya">Kenya</option>
+            <option value="Uganda">Uganda</option>
+            <option value="Tanzania">Tanzania</option>
+          </select>
         </label>
 
         <label className="text-sm font-medium text-slate-700">

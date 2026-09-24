@@ -9,7 +9,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, category, city, area, description, phone, email } = body;
+    const { name, category, city, area, country, description, phone, email } = body;
 
     if (!name || !category || !city || !area || !description || !phone || !email) {
       return NextResponse.json({ error: "Missing required business fields." }, { status: 400 });
@@ -20,6 +20,7 @@ export async function POST(request: Request) {
       category,
       city,
       area,
+      country: country === "Uganda" || country === "Tanzania" ? country : "Kenya",
       description,
       phone,
       email,

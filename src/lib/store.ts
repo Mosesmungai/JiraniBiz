@@ -1,5 +1,6 @@
 import { defaultBusinesses, type Business } from "@/lib/data";
 import { getDb, parsePayload } from "@/lib/db";
+import { geocodeBusinessLocation } from "@/lib/location";
 
 export type Lead = {
   id: string;
@@ -61,6 +62,7 @@ export async function createBusiness(input: {
   description: string;
   phone: string;
   email: string;
+  country?: "Kenya" | "Uganda" | "Tanzania";
   socials?: Partial<Business["socials"]>;
 }) {
   const createdAt = Date.now();
@@ -69,6 +71,8 @@ export async function createBusiness(input: {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") + `-${createdAt}`;
 
+  const location = await geocodeBusinessLocation(input.city, input.area, input.country ?? "Kenya");
+
   const newBusiness: Business = {
     id: `biz-${createdAt}`,
     slug,
@@ -76,6 +80,7 @@ export async function createBusiness(input: {
     category: input.category,
     city: input.city,
     area: input.area,
+    country: input.country ?? "Kenya",
     rating: 4.8,
     reviews: 0,
     image:
@@ -87,26 +92,18 @@ export async function createBusiness(input: {
     badge: "New",
     phone: input.phone,
     email: input.email,
-    location: {
-      label: `${input.area}, ${input.city}`,
-      latitude: 0,
-      longitude: 0,
-    },
+    location,
     socials: {
-      instagram: input.socials?.instagram ?? "https://instagram.com",
-      facebook: input.socials?.facebook ?? "https://facebook.com",
-      x: input.socials?.x ?? "https://x.com",
-      whatsapp: input.socials?.whatsapp ?? "https://wa.me/254700000000",
-      website: input.socials?.website ?? "https://example.com",
+      instagram: input.socials?.instagram ?? "",
+      facebook: input.socials?.facebook ?? "",
+      x: input.socials?.x ?? "",
+      whatsapp: input.socials?.whatsapp ?? "",
+      website: input.socials?.website ?? "",
     },
     verification: {
       status: "pending",
       required: true,
-      gpsProof: {
-        label: `${input.area}, ${input.city}`,
-        latitude: 0,
-        longitude: 0,
-      },
+      gpsProof: location,
       photoUploads: [],
     },
   };
