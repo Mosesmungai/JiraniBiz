@@ -21,6 +21,7 @@ export type BusinessVerification = {
     label: string;
     latitude: number;
     longitude: number;
+    accuracy?: number;
   };
   photoUploads: string[];
 };
@@ -47,6 +48,7 @@ export type Business = {
     label: string;
     latitude: number;
     longitude: number;
+    accuracy?: number;
   };
   socials: SocialLinks;
   verification: BusinessVerification;

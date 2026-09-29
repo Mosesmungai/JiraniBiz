@@ -6,6 +6,8 @@ The application uses Cloud Firestore for server-side persistent storage. The Fir
 
 Discovery keeps recent searches, viewed businesses, category preferences, and manually selected country/city/area labels in browser storage for anonymous use. Signed-in users can sync those same bounded preferences to Firestore. Device latitude, longitude, and reported accuracy are used in memory for nearby sorting only and are never included in local or Firestore preferences. Device location requires browser permission and a secure context (HTTPS in production); manual country, city, and area selection is available across Kenya, Uganda, and Tanzania when location is denied or unavailable. Manual distance estimates use listed-business coordinates in the selected area and are marked approximate; if no coordinates exist, discovery matches the entered location but does not display or sort by distance.
 
+When a business owner opens the listing form, the browser requests device location permission and, after approval, automatically fills the listing's GPS coordinates. Listing creation requires device-reported accuracy of 100 metres or better; poor accuracy must be resolved by retrying, and permission denial prevents submission rather than saving a guessed/default location. Business owners still enter the country, city, and area themselves; exact coordinates are not sent to a reverse-geocoding provider. Device-reported accuracy is an estimate, not a guarantee of the business premises' exact position.
+
 ## Required server environment variables
 
 Set these in the deployment environment; do not commit service-account credentials:

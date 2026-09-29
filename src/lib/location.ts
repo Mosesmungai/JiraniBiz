@@ -2,7 +2,35 @@ export type LocationCoordinates = {
   label: string;
   latitude: number;
   longitude: number;
+  accuracy?: number;
 };
+
+export type DeviceLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+};
+
+export const MAX_BUSINESS_LOCATION_ACCURACY_METERS = 100;
+
+export function isDeviceLocation(value: unknown): value is DeviceLocation {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const location = value as Record<string, unknown>;
+  return (
+    typeof location.latitude === "number" &&
+    Number.isFinite(location.latitude) &&
+    location.latitude >= -90 &&
+    location.latitude <= 90 &&
+    typeof location.longitude === "number" &&
+    Number.isFinite(location.longitude) &&
+    location.longitude >= -180 &&
+    location.longitude <= 180 &&
+    typeof location.accuracy === "number" &&
+    Number.isFinite(location.accuracy) &&
+    location.accuracy >= 0 &&
+    location.accuracy <= MAX_BUSINESS_LOCATION_ACCURACY_METERS
+  );
+}
 
 const DEFAULT_CITY_COORDINATES: Record<string, LocationCoordinates> = {
   nairobi: { label: "Nairobi, Kenya", latitude: -1.286389, longitude: 36.817223 },

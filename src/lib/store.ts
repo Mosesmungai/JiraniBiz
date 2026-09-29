@@ -10,7 +10,7 @@ import {
   reviewsCollection,
   servicesCollection,
 } from "@/lib/firestore";
-import { geocodeBusinessLocation } from "@/lib/location";
+import { geocodeBusinessLocation, type DeviceLocation } from "@/lib/location";
 import type { Business, BusinessVerification, SocialLinks } from "@/lib/data";
 
 type Country = Business["country"];
@@ -129,10 +129,19 @@ function requiredNumber(value: unknown, field: string): number {
 
 function locationFrom(value: unknown, label: string) {
   const location = record(value, label);
+  if (
+    location.accuracy !== undefined &&
+    (typeof location.accuracy !== "number" ||
+      !Number.isFinite(location.accuracy) ||
+      location.accuracy < 0)
+  ) {
+    throw new Error(`Invalid business document: ${label}.accuracy is invalid.`);
+  }
   return {
     label: requiredString(location.label, `${label}.label`),
     latitude: requiredNumber(location.latitude, `${label}.latitude`),
     longitude: requiredNumber(location.longitude, `${label}.longitude`),
+    ...(typeof location.accuracy === "number" ? { accuracy: location.accuracy } : {}),
   };
 }
 
@@ -357,11 +366,17 @@ export async function createBusiness(input: {
   email: string;
   country?: Country;
   socials?: Partial<SocialLinks>;
+  deviceLocation?: DeviceLocation;
 }) {
   const createdAt = new Date().toISOString();
   const slug = `${input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${Date.now()}`;
   const country = input.country ?? "Kenya";
-  const location = await geocodeBusinessLocation(input.city, input.area, country);
+  const location = input.deviceLocation
+    ? {
+        label: [input.area, input.city, country].filter(Boolean).join(", "),
+        ...input.deviceLocation,
+      }
+    : await geocodeBusinessLocation(input.city, input.area, country);
   const id = `biz-${randomUUID()}`;
   const business: Business = {
     id,
