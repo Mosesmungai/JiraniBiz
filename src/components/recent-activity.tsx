@@ -31,7 +31,15 @@ export function rememberViewedBusiness(slug: string) {
 
 export function RecentSearches({ onSelect }: { onSelect: (value: string) => void }) {
   const [items, setItems] = useState<string[]>([]);
-  useEffect(() => setItems(readCookie(SEARCH_COOKIE)), []);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setItems(readCookie(SEARCH_COOKIE));
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   if (!items.length) return null;
   return <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Recent</span>{items.map(item => <button key={item} type="button" onClick={() => onSelect(item)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-slate-400">{item}</button>)}</div>;
 }

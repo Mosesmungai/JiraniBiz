@@ -7,6 +7,10 @@ import { businessesCollection } from "@/lib/firestore";
 import { getFirestoreDb } from "@/lib/firebase-admin";
 import { distanceKm } from "@/lib/geo";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function POST(request: Request) {
   try {
     const token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -23,13 +27,28 @@ export async function POST(request: Request) {
 
     const businessDoc = await businessesCollection().doc(businessId).get();
     if (!businessDoc.exists) return NextResponse.json({ error: "Business not found." }, { status: 404 });
-    const business = businessDoc.data() as Record<string, any>;
+    const business = businessDoc.data();
+    if (!business) return NextResponse.json({ error: "Business data is unavailable." }, { status: 404 });
     if (user.role === "business_owner" && business.ownerId !== user.id) return NextResponse.json({ error: "You do not own this business." }, { status: 403 });
-    if (!business.location?.latitude || !business.location?.longitude) return NextResponse.json({ error: "Business has no registered coordinates." }, { status: 409 });
+    if (!isRecord(business.location)) return NextResponse.json({ error: "Business has no registered coordinates." }, { status: 409 });
+    const registeredLatitude = business.location.latitude;
+    const registeredLongitude = business.location.longitude;
+    if (
+      typeof registeredLatitude !== "number" ||
+      !Number.isFinite(registeredLatitude) ||
+      registeredLatitude < -90 ||
+      registeredLatitude > 90 ||
+      typeof registeredLongitude !== "number" ||
+      !Number.isFinite(registeredLongitude) ||
+      registeredLongitude < -180 ||
+      registeredLongitude > 180
+    ) {
+      return NextResponse.json({ error: "Business has no valid registered coordinates." }, { status: 409 });
+    }
 
     const buffer = Buffer.from(await photo.arrayBuffer());
     const exifGps = await exifr.gps(buffer).catch(() => undefined);
-    const registered = { latitude: Number(business.location.latitude), longitude: Number(business.location.longitude) };
+    const registered = { latitude: registeredLatitude, longitude: registeredLongitude };
     const live = { latitude, longitude, accuracy: Number.isFinite(accuracy) ? accuracy : undefined };
     const liveDistanceKm = distanceKm(live, registered);
     const exifDistanceKm = exifGps ? distanceKm(exifGps, registered) : null;
