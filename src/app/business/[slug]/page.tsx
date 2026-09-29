@@ -2,7 +2,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BookingForm } from "@/components/booking-form";
+import {
+  DiscoveryPreferencesProvider,
+  DiscoveryPreferencesStatus,
+} from "@/components/discovery-preferences-provider";
 import { LeadRequestForm } from "@/components/lead-request-form";
+import { RecentBusinessTracker } from "@/components/recent-business-tracker";
 import { getBusinessBySlug, getServicesForBusiness } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +21,21 @@ export default async function BusinessPage({ params }: { params: Promise<{ slug:
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${business.location.latitude},${business.location.longitude}`;
 
   return (
+    <DiscoveryPreferencesProvider>
     <div className="min-h-screen bg-slate-50 text-slate-900">
+      <RecentBusinessTracker business={{
+        id: business.id,
+        slug: business.slug,
+        name: business.name,
+        category: business.category,
+        city: business.city,
+        area: business.area,
+      }} />
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm"><div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link href="/" className="flex items-center gap-3 font-semibold"><div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1"><Image src="/jiranibiz-logo.png" alt="JiraniBiz logo" width={52} height={52} className="h-full w-full object-contain" /></div><span className="text-lg tracking-[-0.05em]">JiraniBiz</span></Link>
         <div className="flex items-center gap-3"><Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium">Back to results</Link><Link href={mapsUrl} target="_blank" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Open map</Link></div>
       </div></header>
-      <main className="mx-auto max-w-7xl px-6 py-10"><div className="grid gap-8 lg:grid-cols-[1.6fr_0.8fr]">
+      <main className="mx-auto max-w-7xl px-6 py-10"><DiscoveryPreferencesStatus /><div className="mt-5 grid gap-8 lg:grid-cols-[1.6fr_0.8fr]">
         <section className="space-y-8">
           <div className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-sm"><Image src={business.image} alt={business.name} width={1200} height={700} className="h-[380px] w-full object-cover" /><div className="p-6 md:p-8">
             <div className="flex flex-wrap items-center gap-3"><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700">{business.badge}</span>{business.verified && <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">Verified</span>}</div>
@@ -37,5 +51,6 @@ export default async function BusinessPage({ params }: { params: Promise<{ slug:
         <aside className="space-y-6"><BookingForm businessId={business.id} businessName={business.name} /><LeadRequestForm businessSlug={business.slug} businessName={business.name} /><div className="rounded-[32px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm"><p className="text-xs uppercase tracking-[0.2em] text-slate-300">Business contact</p><div className="mt-4 text-2xl font-semibold">{business.phone || "+254 700 123 456"}</div><div className="mt-2 text-sm text-slate-300">{business.email || `hello@${business.slug}.co.ke`}</div><div className="mt-6 space-y-3 text-sm text-slate-200"><div>Mon - Sat: 8:00 AM - 7:00 PM</div><div>{business.area}, {business.city}</div></div><Link href={mapsUrl} target="_blank" className="mt-6 block w-full rounded-full bg-white px-4 py-3 text-center text-sm font-semibold text-slate-900">Open in Maps</Link></div></aside>
       </div></main>
     </div>
+    </DiscoveryPreferencesProvider>
   );
 }

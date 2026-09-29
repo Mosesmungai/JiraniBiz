@@ -2,7 +2,9 @@
 
 Firebase project ID: `jiranibiz`
 
-The application uses Cloud Firestore for server-side persistent storage. The Firebase Admin SDK is server-only. Core collections are `users`, `sessions`, `businesses`, `businessSlugs`, `userEmails`, `services`, `leads`, `bookings`, and `reviews`.
+The application uses Cloud Firestore for server-side persistent storage. The Firebase Admin SDK is server-only. Core collections are `users`, `sessions`, `businesses`, `businessSlugs`, `userEmails`, `services`, `leads`, `bookings`, and `reviews`. Signed-in discovery preferences are stored at `users/{userId}/preferences/discovery`; the API only accepts bounded, validated preference fields.
+
+Discovery keeps recent searches, viewed businesses, category preferences, and manually selected country/city/area labels in browser storage for anonymous use. Signed-in users can sync those same bounded preferences to Firestore. Device latitude, longitude, and reported accuracy are used in memory for nearby sorting only and are never included in local or Firestore preferences. Device location requires browser permission and a secure context (HTTPS in production); manual country, city, and area selection is available across Kenya, Uganda, and Tanzania when location is denied or unavailable. Manual distance estimates use listed-business coordinates in the selected area and are marked approximate; if no coordinates exist, discovery matches the entered location but does not display or sort by distance.
 
 ## Required server environment variables
 
