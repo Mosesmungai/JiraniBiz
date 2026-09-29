@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BookingForm } from "@/components/booking-form";
 import { LeadRequestForm } from "@/components/lead-request-form";
+import { ViewTracker } from "@/components/view-tracker";
 import { servicesCollection } from "@/lib/firestore";
 import { getBusinessBySlug } from "@/lib/store";
 
