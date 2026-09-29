@@ -1,12 +1,12 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { firestore } from "./firebase-admin";
+import { getFirestoreDb } from "./firebase-admin";
 
 export { FieldValue };
 
-export const usersCollection = firestore.collection("users");
-export const sessionsCollection = firestore.collection("sessions");
-export const businessesCollection = firestore.collection("businesses");
-export const servicesCollection = firestore.collection("services");
-export const leadsCollection = firestore.collection("leads");
-export const bookingsCollection = firestore.collection("bookings");
-export const reviewsCollection = firestore.collection("reviews");
+export const usersCollection = () => getFirestoreDb().collection("users");
+export const sessionsCollection = () => getFirestoreDb().collection("sessions");
+export const businessesCollection = () => getFirestoreDb().collection("businesses");
+export const servicesCollection = () => getFirestoreDb().collection("services");
+export const leadsCollection = () => getFirestoreDb().collection("leads");
+export const bookingsCollection = () => getFirestoreDb().collection("bookings");
+export const reviewsCollection = () => getFirestoreDb().collection("reviews");
