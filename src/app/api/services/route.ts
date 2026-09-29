@@ -19,7 +19,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const businessId = searchParams.get("businessId");
   const businessSlug = searchParams.get("businessSlug");
-
   if (!businessId && !businessSlug) {
     return NextResponse.json({ error: "businessId or businessSlug is required." }, { status: 400 });
   }

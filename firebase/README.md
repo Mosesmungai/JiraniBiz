@@ -11,8 +11,10 @@ Set these in the deployment environment; do not commit service-account credentia
 - `FIREBASE_PROJECT_ID=jiranibiz`
 - `FIREBASE_CLIENT_EMAIL=<Firebase service account client email>`
 - `FIREBASE_PRIVATE_KEY=<Firebase service account private key>`
+- `SESSION_SECRET=<long random session-signing secret>`
 
 The private key should be stored as a deployment secret/environment variable, with escaped newlines handled by the application.
+Generate a unique `SESSION_SECRET` for each environment; session creation and validation fail explicitly when it is absent.
 
 ## Migrate the existing SQLite data
 
@@ -45,6 +47,6 @@ Keep the SQLite database and its WAL files until Firestore data and application 
 1. Open the Firebase project `jiranibiz`.
 2. Enable Cloud Firestore.
 3. Create a server/service account credential for the Next.js server.
-4. Add the three environment variables above to the deployment platform.
+4. Add the Firebase credentials and `SESSION_SECRET` above to the deployment platform.
 
 Do not commit the service-account JSON file or private key to GitHub.

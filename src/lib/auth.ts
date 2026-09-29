@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { cookies } from "next/headers";
 import type { DocumentData } from "firebase-admin/firestore";
 import { getFirestoreDb } from "@/lib/firebase-admin";
 import { sessionsCollection, userEmailsCollection, usersCollection } from "@/lib/firestore";
@@ -14,7 +15,7 @@ export type AuthUser = {
 };
 
 const SESSION_DAYS = 30;
-const SESSION_COOKIE = "jiranibiz_session";
+export const SESSION_COOKIE = "jiranibiz_session";
 
 export class DuplicateEmailError extends Error {
   constructor() {
@@ -79,10 +80,10 @@ export async function createUser(input: {
   const id = `user-${randomBytes(12).toString("hex")}`;
   const email = normalizeEmail(input.email);
   const role = input.role ?? "customer";
-
-  if (!email || !input.name.trim()) throw new Error("Name and email are required");
-
   const name = input.name.trim();
+
+  if (!email || !name) throw new Error("Name and email are required");
+
   const phone = input.phone?.trim() || null;
   const passwordHash = hashPassword(input.password);
   const userRef = usersCollection().doc(id);
@@ -126,7 +127,9 @@ export async function authenticateUser(emailInput: string, password: string): Pr
 }
 
 function hashToken(token: string) {
-  return createHmac("sha256", process.env.SESSION_SECRET ?? "jiranibiz-development-secret").update(token).digest("hex");
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("SESSION_SECRET is required");
+  return createHmac("sha256", secret).update(token).digest("hex");
 }
 
 export async function createSession(userId: string) {
@@ -173,4 +176,7 @@ export async function destroySession(token: string | undefined) {
   await sessionsCollection().doc(hashToken(token)).delete();
 }
 
-export { SESSION_COOKIE };
+export async function getCurrentUser() {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return getUserFromSession(token);
+}
