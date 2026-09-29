@@ -4,7 +4,7 @@ import { createSession, createUser, SESSION_COOKIE } from "@/lib/auth";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const user = createUser({
+    const user = await createUser({
       name: String(body.name ?? ""),
       email: String(body.email ?? ""),
       phone: body.phone ? String(body.phone) : undefined,
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       role: body.role === "business_owner" ? "business_owner" : "customer",
     });
 
-    const session = createSession(user.id);
+    const session = await createSession(user.id);
     const response = NextResponse.json({ user }, { status: 201 });
     response.cookies.set(SESSION_COOKIE, session.token, {
       httpOnly: true,
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Registration failed";
-    const status = message.includes("UNIQUE") ? 409 : 400;
+    const status = message.includes("already exists") ? 409 : 400;
     return NextResponse.json({ error: status === 409 ? "An account with this email already exists" : message }, { status });
   }
 }
