@@ -15,6 +15,8 @@ import {
   type PreferenceLocation,
   type RecentSearch,
 } from "@/lib/discovery-preferences";
+import { RecentSearches, rememberSearch } from "@/components/recent-activity";
+import { formatDistance } from "@/lib/geo";
 
 async function requestBusinesses(): Promise<Business[]> {
   const response = await fetch("/api/businesses");
@@ -255,6 +257,7 @@ function DiscoverContent() {
     const location: PreferenceLocation | null = locationMode === "manual" && manualCountry && manualCity
       ? { country: manualCountry, city: manualCity, area: manualArea }
       : null;
+    rememberSearch(query);
     saveSearch({ query: query.trim(), category: selectedCategory, location });
   };
 
@@ -429,6 +432,7 @@ function DiscoverContent() {
             Search nearby
           </button>
         </form>
+        <RecentSearches onSelect={setQuery} />
 
         <div className="mt-8 flex flex-wrap gap-3">
           {[
@@ -654,7 +658,7 @@ function DiscoverContent() {
                                 <span className="font-medium text-teal-700">
                                   {distanceKm(userLocation, business.location) < 1
                                     ? userLocation.accuracy === null ? "Nearby (approx.)" : "Nearby"
-                                    : `${userLocation.accuracy === null ? "~" : ""}${distanceKm(userLocation, business.location).toFixed(1)} km away`}
+                                    : `${userLocation.accuracy === null ? "~" : ""}${formatDistance(distanceKm(userLocation, business.location))} away`}
                                 </span>
                               </>
                             )}

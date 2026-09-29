@@ -8,6 +8,7 @@ import {
 } from "@/components/discovery-preferences-provider";
 import { LeadRequestForm } from "@/components/lead-request-form";
 import { RecentBusinessTracker } from "@/components/recent-business-tracker";
+import { ViewTracker } from "@/components/view-tracker";
 import { getBusinessBySlug, getServicesForBusiness } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ slug:
         city: business.city,
         area: business.area,
       }} />
+      <ViewTracker slug={business.slug} />
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm"><div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link href="/" className="flex items-center gap-3 font-semibold"><div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1"><Image src="/jiranibiz-logo.png" alt="JiraniBiz logo" width={52} height={52} className="h-full w-full object-contain" /></div><span className="text-lg tracking-[-0.05em]">JiraniBiz</span></Link>
         <div className="flex items-center gap-3"><Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium">Back to results</Link><Link href={mapsUrl} target="_blank" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Open map</Link></div>
