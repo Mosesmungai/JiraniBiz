@@ -4,6 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { categories, defaultBusinesses, type Business } from "@/lib/data";
+import { formatDistance } from "@/lib/geo";
+import { LocationButton, type DeviceLocation } from "@/components/location-button";
+import { RecentSearches, rememberSearch } from "@/components/recent-activity";
 
 const userLocationDefaults = {
   label: "Nairobi, Kenya",
@@ -29,7 +32,7 @@ export default function DiscoverPage() {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [radiusKm, setRadiusKm] = useState(30);
-  const [userLocation, setUserLocation] = useState(userLocationDefaults);
+  const [userLocation, setUserLocation] = useState({ ...userLocationDefaults, accuracy: undefined as number | undefined });
   const [businesses, setBusinesses] = useState<Business[]>(defaultBusinesses);
 
   useEffect(() => {
@@ -49,21 +52,7 @@ export default function DiscoverPage() {
 
     loadBusinesses();
 
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
 
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setUserLocation({
-          label: "Your current location",
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-        });
-      },
-      () => {
-        setUserLocation(userLocationDefaults);
-      },
-      { enableHighAccuracy: true, timeout: 8000 },
-    );
   }, []);
 
   const filteredBusinesses = useMemo(() => {
@@ -131,7 +120,7 @@ export default function DiscoverPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                 <div className="text-sm text-slate-500">Location</div>
-                <div className="mt-2 font-medium text-slate-900">{userLocation.label}</div>
+                <div className="mt-2 font-medium text-slate-900">{userLocation.label}</div>{userLocation.accuracy ? <div className="mt-1 text-xs text-slate-500">Accuracy ±{Math.round(userLocation.accuracy)} m</div> : <div className="mt-1 text-xs text-amber-600">Device location not confirmed</div>}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                 <div className="text-sm text-slate-500">Category</div>
