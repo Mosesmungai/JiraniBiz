@@ -141,13 +141,13 @@ export function BusinessForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)] md:p-6">
       <div className="mb-6">
-        <p className="text-xs uppercase tracking-[0.2em] text-teal-700">New listing</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Add a local business</h2>
+        <p className="eyebrow">New listing</p>
+        <h2 className="mt-2 text-xl font-semibold text-slate-900">Add a local business</h2>
       </div>
 
-      <section className="mb-6 rounded-2xl border border-teal-200 bg-teal-50 p-4" aria-label="Business GPS location">
+      <section className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4" aria-label="Business GPS location">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Business location coordinates</h3>
@@ -159,7 +159,7 @@ export function BusinessForm() {
             type="button"
             onClick={captureLocation}
             disabled={locationStatus.type === "loading"}
-            className="rounded-full border border-teal-800 px-4 py-2 text-xs font-semibold text-teal-900 disabled:opacity-50"
+            className="rounded-full border border-emerald-800 px-4 py-2 text-xs font-semibold text-emerald-950 disabled:opacity-50"
           >
             {locationStatus.type === "loading" ? "Locating…" : "Refresh location"}
           </button>
@@ -195,7 +195,7 @@ export function BusinessForm() {
           <input
             value={form.name}
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none placeholder:text-slate-400"
             placeholder="e.g. Kingsway Cleaning"
             required
           />
@@ -206,7 +206,7 @@ export function BusinessForm() {
           <select
             value={form.category}
             onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none"
           >
             <option>Cleaning</option>
             <option>Plumbing</option>
@@ -222,7 +222,7 @@ export function BusinessForm() {
           <input
             value={form.city}
             onChange={(event) => setForm((current) => ({ ...current, city: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none placeholder:text-slate-400"
             placeholder="City"
             required
           />
@@ -233,7 +233,7 @@ export function BusinessForm() {
           <select
             value={form.country}
             onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none"
             required
           >
             <option value="">Select a country</option>
@@ -248,7 +248,7 @@ export function BusinessForm() {
           <input
             value={form.area}
             onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none placeholder:text-slate-400"
             placeholder="Westlands"
             required
           />
@@ -259,7 +259,7 @@ export function BusinessForm() {
           <textarea
             value={form.description}
             onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-            className="mt-2 min-h-[120px] w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-300"
+            className="mt-1.5 min-h-[112px] w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none placeholder:text-slate-400"
             placeholder="Tell customers what services you offer, how quickly you respond and what makes your business reliable."
             required
           />
@@ -270,7 +270,7 @@ export function BusinessForm() {
           <input
             value={form.phone}
             onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none placeholder:text-slate-400"
             placeholder="+254 700 123 456"
             required
           />
@@ -282,7 +282,7 @@ export function BusinessForm() {
             type="email"
             value={form.email}
             onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-300"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none placeholder:text-slate-400"
             placeholder="hello@business.co.ke"
             required
           />

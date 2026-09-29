@@ -277,8 +277,8 @@ function DiscoverContent() {
     .filter((name) => name !== selectedCategory)
     .slice(0, 3);
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+    <div className="min-h-screen text-slate-900">
+      <header className="site-header border-b">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3 font-semibold text-slate-900">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1 shadow-sm ring-1 ring-slate-200">
@@ -288,45 +288,45 @@ function DiscoverContent() {
           </Link>
           <nav className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
             <Link href="/discover">Discover</Link>
-            <Link href="#">How it works</Link>
-            <Link href="#">Pricing</Link>
+            <Link href="/#how-it-works">How it works</Link>
+            <Link href="/#pricing">Pricing</Link>
           </nav>
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="hidden rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 md:inline-flex">
               Business dashboard
             </Link>
-            <Link href="#" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm">
+            <Link href="/dashboard" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm">
               List your business
             </Link>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-10">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      <main className="mx-auto max-w-7xl px-5 py-7 md:px-6 md:py-9">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)] md:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-teal-700">Trusted local discovery</p>
-              <h1 className="mt-2 text-3xl font-semibold text-slate-900">Find reliable businesses near you</h1>
+              <p className="eyebrow">Trusted local discovery</p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">Find reliable businesses near you</h1>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-sm text-slate-500">Location</div>
-                <div className="mt-2 font-medium text-slate-900">{locationLabel}</div>
+              <div className="border-l-2 border-emerald-700 pl-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Location</div>
+                <div className="mt-1 text-sm font-medium text-slate-900">{locationLabel}</div>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-sm text-slate-500">Category</div>
-                <div className="mt-2 font-medium text-slate-900">{selectedCategory === "All" ? "All services" : selectedCategory}</div>
+              <div className="border-l-2 border-slate-200 pl-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Category</div>
+                <div className="mt-1 text-sm font-medium text-slate-900">{selectedCategory === "All" ? "All services" : selectedCategory}</div>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-sm text-slate-500">Search radius</div>
-                <div className="mt-2 font-medium text-slate-900">{radiusKm} km</div>
+              <div className="border-l-2 border-slate-200 pl-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Search radius</div>
+                <div className="mt-1 text-sm font-medium text-slate-900">{radiusKm} km</div>
               </div>
             </div>
           </div>
         </div>
 
-        <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Location settings">
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]" aria-label="Location settings">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-xl">
               <h2 className="font-semibold text-slate-900">Choose how to find nearby businesses</h2>
@@ -421,7 +421,7 @@ function DiscoverContent() {
           <DiscoveryPreferencesStatus />
         </section>
 
-        <form onSubmit={submitSearch} className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
+        <form onSubmit={submitSearch} className="mt-5 flex flex-col gap-3 md:flex-row md:items-center">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -434,7 +434,7 @@ function DiscoverContent() {
         </form>
         <RecentSearches onSelect={setQuery} />
 
-        <div className="mt-8 flex flex-wrap gap-3">
+        <div className="mt-6 flex flex-wrap gap-2">
           {[
             "All",
             ...categories.map((category) => category.name),
@@ -445,7 +445,7 @@ function DiscoverContent() {
                 setSelectedCategory(category);
                 saveCategory(category);
               }}
-              className={`rounded-full border px-4 py-2 text-sm font-medium shadow-sm transition ${
+              className={`rounded-full border px-3.5 py-2 text-sm font-medium transition ${
                 selectedCategory === category
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900"
@@ -456,12 +456,12 @@ function DiscoverContent() {
           ))}
         </div>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-[320px_1fr]">
-          <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
-            <div className="mt-6 space-y-6 text-sm text-slate-600">
-              <div>
-                <label className="mb-2 block font-medium text-slate-700">Distance</label>
+        <div className="mt-7 grid gap-5 lg:grid-cols-[270px_1fr]">
+          <aside className="h-fit rounded-2xl border border-slate-200 bg-white px-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
+            <div className="py-4">
+              <h2 className="text-sm font-semibold text-slate-900">Refine results</h2>
+              <div className="mt-4">
+                <label className="mb-2 block text-sm font-medium text-slate-700">Distance radius</label>
                 <input
                   type="range"
                   min={5}
@@ -469,28 +469,17 @@ function DiscoverContent() {
                   value={radiusKm}
                   onChange={(event) => setRadiusKm(Number(event.target.value))}
                   disabled={!userLocation}
-                  className="w-full accent-slate-900"
+                  className="w-full accent-emerald-800"
                 />
-                <div className="mt-2 text-xs text-slate-500">
+                <div className="mt-1 text-xs text-slate-500">
                   {userLocation ? `Within ${radiusKm} km` : "Choose a location to filter by distance."}
-                </div>
-              </div>
-              <div>
-                <label className="mb-2 block font-medium text-slate-700">Rating</label>
-                <div className="space-y-2">
-                  {["4.5+", "4.7+", "4.9+"].map((rating) => (
-                    <label key={rating} className="flex items-center gap-2">
-                      <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
-                      {rating}
-                    </label>
-                  ))}
                 </div>
               </div>
             </div>
             {preferences.preferredLocations.length > 0 && (
-              <div className="mt-6 border-t border-slate-100 pt-5">
-                <h3 className="font-medium text-slate-800">Your locations</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
+              <details className="disclosure-row">
+                <summary>Your locations</summary>
+                <div className="flex flex-wrap gap-2 pb-4">
                   {preferences.preferredLocations.slice(0, 4).map((location) => (
                     <button
                       key={`${location.country}:${location.city}:${location.area}`}
@@ -507,15 +496,15 @@ function DiscoverContent() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
-            <div className="mt-6 border-t border-slate-100 pt-5">
-              <h3 className="font-medium text-slate-800">Recent searches</h3>
-              {!ready && <p className="mt-2 text-xs text-slate-500">Loading saved searches…</p>}
-              {ready && preferences.recentSearches.length === 0 && (
-                <p className="mt-2 text-xs text-slate-500">Your searches will appear here.</p>
-              )}
-              <div className="mt-3 space-y-2">
+            <details className="disclosure-row">
+              <summary>Recent searches</summary>
+              <div className="space-y-2 pb-4">
+                {!ready && <p className="text-xs text-slate-500">Loading saved searches…</p>}
+                {ready && preferences.recentSearches.length === 0 && (
+                  <p className="text-xs text-slate-500">Your searches will appear here.</p>
+                )}
                 {preferences.recentSearches.slice(0, 5).map((search) => (
                   <button
                     key={`${search.createdAt}:${search.query}`}
@@ -530,10 +519,10 @@ function DiscoverContent() {
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="mt-6 border-t border-slate-100 pt-5">
-              <h3 className="font-medium text-slate-800">Recently viewed</h3>
-              <div className="mt-3 space-y-2">
+            </details>
+            <details className="disclosure-row">
+              <summary>Recently viewed</summary>
+              <div className="space-y-2 pb-4">
                 {preferences.recentlyViewedBusinesses.slice(0, 5).map((business) => (
                   <Link
                     key={business.id}
@@ -550,11 +539,11 @@ function DiscoverContent() {
                   <p className="text-xs text-slate-500">Businesses you open will appear here.</p>
                 )}
               </div>
-            </div>
+            </details>
           </aside>
 
-          <section className="space-y-5">
-            <div className="rounded-[30px] border border-slate-200 bg-slate-900 p-5 text-white shadow-sm">
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-emerald-950/10 bg-[#173b37] p-5 text-white shadow-[0_12px_30px_rgba(20,48,43,0.12)]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="text-xs uppercase tracking-[0.2em] text-slate-300">
@@ -618,18 +607,18 @@ function DiscoverContent() {
                 </button>
               </div>
             ) : loading ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-slate-600" aria-live="polite">
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600" aria-live="polite">
                 Loading businesses...
               </div>
             ) : filteredBusinesses.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-600">
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
                 No businesses match the current filters. Try widening your search radius, choosing another location, or changing the category.
               </div>
             ) : (
               filteredBusinesses.map((business) => (
-                <article key={business.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                  <div className="grid gap-5 p-4 md:grid-cols-[220px_1fr]">
-                    <Image src={business.image} alt={business.name} width={800} height={600} className="h-52 w-full rounded-2xl object-cover md:h-full" />
+                <article key={business.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
+                  <div className="grid gap-4 p-4 md:grid-cols-[190px_1fr]">
+                    <Image src={business.image} alt={business.name} width={800} height={600} className="h-44 w-full rounded-xl object-cover md:h-full" />
                     <div className="flex flex-col justify-between gap-4 p-1">
                       <div className="flex items-start justify-between gap-4">
                         <div>

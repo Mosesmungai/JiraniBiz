@@ -23,10 +23,9 @@ export default async function DashboardPage() {
 
   const dashboard = await getDashboardData(user.role === "business_owner" ? user.id : undefined);
   const overview = [
-    { label: "Profile views", value: "2,480", change: "+18%" },
-    { label: "New leads", value: String(dashboard.leadCount), change: "+12%" },
-    { label: "Businesses", value: String(dashboard.businessCount), change: "+9%" },
-    { label: "Revenue", value: `KES ${dashboard.totalRevenue.toLocaleString()}`, change: "+22%" },
+    { label: "Customer leads", value: String(dashboard.leadCount) },
+    { label: "Business listings", value: String(dashboard.businessCount) },
+    { label: "Combined starting prices", value: `KES ${dashboard.totalRevenue.toLocaleString()}` },
   ];
 
   const recentLeads = dashboard.leads.map((lead) => ({
@@ -37,8 +36,8 @@ export default async function DashboardPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+    <div className="min-h-screen text-slate-900">
+      <header className="site-header border-b">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3 font-semibold text-slate-900">
             <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1 shadow-sm ring-1 ring-slate-200">
@@ -54,7 +53,7 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-10">
+      <main className="mx-auto max-w-7xl px-6 py-8 md:py-10">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-teal-700">Business dashboard</p>
@@ -63,20 +62,28 @@ export default async function DashboardPage() {
           <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">Role: {user.role === "business_owner" ? "Business owner" : "Admin"}</div>
         </div>
 
-        <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          {overview.map((item) => <div key={item.label} className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><div className="text-sm text-slate-500">{item.label}</div><div className="mt-4 flex items-end justify-between"><div className="text-3xl font-semibold text-slate-900">{item.value}</div><span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{item.change}</span></div></div>)}
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          {overview.map((item) => <div key={item.label} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_8px_24px_rgba(20,48,43,0.04)]"><div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</div><div className="mt-3 break-words text-2xl font-semibold tracking-tight text-slate-900">{item.value}</div></div>)}
         </div>
 
-        <div className="mt-8 grid gap-8 xl:grid-cols-[1.3fr_0.7fr]">
-          <section className="space-y-6">
-            <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+          <section className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
               <div className="mb-6 flex items-center justify-between"><h2 className="text-xl font-semibold text-slate-900">Recent leads</h2></div>
-              <div className="overflow-hidden rounded-2xl border border-slate-200"><table className="min-w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500"><tr><th className="px-4 py-3 font-medium">Customer</th><th className="px-4 py-3 font-medium">Business</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 font-medium">Time</th></tr></thead><tbody>{recentLeads.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-500">No leads yet. New customer requests will appear here.</td></tr> : recentLeads.map((lead) => <tr key={`${lead.name}-${lead.service}-${lead.time}`} className="border-t border-slate-200"><td className="px-4 py-4 font-medium text-slate-800">{lead.name}</td><td className="px-4 py-4">{lead.service}</td><td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{lead.status}</span></td><td className="px-4 py-4">{lead.time}</td></tr>)}</tbody></table></div>
+              <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-[11px] uppercase tracking-[0.14em] text-slate-500"><tr><th className="px-4 py-3 font-medium">Customer</th><th className="px-4 py-3 font-medium">Business</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 font-medium">Date</th></tr></thead><tbody>{recentLeads.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-500">No leads yet. New customer requests will appear here.</td></tr> : recentLeads.map((lead) => <tr key={`${lead.name}-${lead.service}-${lead.time}`} className="border-t border-slate-200"><td className="px-4 py-4 font-medium text-slate-800">{lead.name}</td><td className="px-4 py-4">{lead.service}</td><td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${lead.status === "Booked" ? "bg-emerald-50 text-emerald-800" : lead.status === "Closed" ? "bg-slate-100 text-slate-700" : lead.status === "Contacted" ? "bg-sky-50 text-sky-800" : "bg-amber-50 text-amber-800"}`}>{lead.status}</span></td><td className="px-4 py-4">{lead.time}</td></tr>)}</tbody></table></div>
             </div>
-            <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-xl font-semibold text-slate-900">Access hierarchy</h2><div className="mt-5 grid gap-3 md:grid-cols-2">{accessHierarchy.map((item) => <div key={item.role} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.2em] text-slate-500">{item.role}</div><div className="mt-3 text-sm leading-6 text-slate-700">{item.description}</div></div>)}</div></div>
-            <BusinessForm />
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]"><h2 className="text-lg font-semibold text-slate-900">Platform roles</h2><div className="mt-3 divide-y divide-slate-100">{accessHierarchy.map((item) => <div key={item.role} className="grid gap-1 py-3 sm:grid-cols-[150px_1fr] sm:gap-4"><div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.role}</div><div className="text-sm leading-6 text-slate-700">{item.description}</div></div>)}</div></div>
+            <div id="add-business"><BusinessForm /></div>
           </section>
-          <aside className="space-y-6"><div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-xl font-semibold text-slate-900">Quick actions</h2><div className="mt-5 space-y-3"><button className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">+ Add new service</button><button className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Update business profile</button><button className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">Promote listing</button></div></div><div className="rounded-[32px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm"><p className="text-xs uppercase tracking-[0.2em] text-slate-300">This month</p><div className="mt-4 text-4xl font-semibold">KES {dashboard.totalRevenue.toLocaleString()}</div><p className="mt-3 text-sm text-slate-300">Generated from {dashboard.businessCount} active listings and {dashboard.leadCount} customer leads.</p></div></aside>
+          <aside className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
+              <h2 className="text-lg font-semibold text-slate-900">Next steps</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Keep your business presence up to date and respond promptly to new customer requests.</p>
+              <Link href="#add-business" className="mt-4 inline-flex rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Add a business listing</Link>
+              <Link href="/discover" className="ml-3 inline-flex rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Explore marketplace</Link>
+            </div>
+            <div className="rounded-2xl border border-emerald-900/10 bg-[#173b37] p-5 text-white shadow-[0_12px_30px_rgba(20,48,43,0.12)]"><p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100">Listing snapshot</p><div className="mt-3 text-3xl font-semibold">KES {dashboard.totalRevenue.toLocaleString()}</div><p className="mt-2 text-sm leading-6 text-emerald-50/80">Combined starting prices across {dashboard.businessCount} listings. This is not booking revenue.</p></div>
+          </aside>
         </div>
       </main>
     </div>
