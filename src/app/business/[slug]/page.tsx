@@ -3,20 +3,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BookingForm } from "@/components/booking-form";
 import { LeadRequestForm } from "@/components/lead-request-form";
+import { servicesCollection } from "@/lib/firestore";
 import { getBusinessBySlug } from "@/lib/store";
-import { getDb } from "@/lib/db";
 
 export default async function BusinessPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const business = await getBusinessBySlug(slug);
   if (!business) notFound();
 
-  const db = getDb();
-  const businessRow = db.prepare("SELECT id FROM businesses WHERE slug = ?").get(slug) as { id: string } | undefined;
-  const services = businessRow
-    ? db.prepare("SELECT id, name, description, price FROM services WHERE business_id = ? ORDER BY rowid DESC").all(businessRow.id) as { id: string; name: string; description: string; price: number }[]
-    : [];
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${business.location.latitude},${business.location.longitude}`;
+  const servicesSnapshot = await servicesCollection().where("businessId", "==", business.id).get();
+  const services = servicesSnapshot.docs.map((doc) => doc.data() as { id: string; name: string; description: string; price: number; createdAt?: string }).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const mapsUrl = business.location ? `https://www.google.com/maps/search/?api=1&query=${business.location.latitude},${business.location.longitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${business.area}, ${business.city}, ${business.country}`)}`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -31,16 +28,12 @@ export default async function BusinessPage({ params }: { params: Promise<{ slug:
             <h1 className="mt-4 text-4xl font-semibold">{business.name}</h1><div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-600"><span>{business.category}</span><span>•</span><span>{business.area}</span><span>•</span><span>{business.city}</span></div>
             <div className="mt-6 flex flex-wrap items-center gap-4"><div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><span className="text-yellow-500">★</span><span className="font-semibold">{business.rating}</span><span>({business.reviews} reviews)</span></div><div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm">KES {business.priceFrom.toLocaleString()} starting price</div></div>
           </div></div>
-
           <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"><h2 className="text-2xl font-semibold">Services & pricing</h2><p className="mt-2 text-sm text-slate-500">Choose from services published by this business.</p><div className="mt-6 grid gap-4 sm:grid-cols-2">
             {services.length ? services.map((service) => <div key={service.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><h3 className="font-semibold">{service.name}</h3><span className="font-semibold">KES {Number(service.price).toLocaleString()}</span></div><p className="mt-2 text-sm leading-6 text-slate-600">{service.description || "Service details available from the business."}</p></div>) : <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">No individual services have been published yet.</div>}
           </div></div>
-
           <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"><h2 className="text-2xl font-semibold">About this business</h2><p className="mt-4 text-base leading-8 text-slate-600">{business.description}</p><div className="mt-8 grid gap-3 sm:grid-cols-2">{business.services.map((service) => <div key={service} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">{service}</div>)}</div></div>
-
-          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"><h2 className="text-2xl font-semibold">Verified business details</h2><div className="mt-6 grid gap-4 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.2em] text-slate-500">Verification status</div><div className="mt-2 text-lg font-semibold">{business.verification.status}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.2em] text-slate-500">Location proof</div><div className="mt-2 text-lg font-semibold">{business.location.label}</div></div></div></div>
+          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"><h2 className="text-2xl font-semibold">Verified business details</h2><div className="mt-6 grid gap-4 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.2em] text-slate-500">Verification status</div><div className="mt-2 text-lg font-semibold">{business.verification.status}</div></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.2em] text-slate-500">Location proof</div><div className="mt-2 text-lg font-semibold">{business.location?.label ?? `${business.area}, ${business.city}`}</div></div></div></div>
         </section>
-
         <aside className="space-y-6"><BookingForm businessId={business.id} businessName={business.name} /><LeadRequestForm businessSlug={business.slug} businessName={business.name} /><div className="rounded-[32px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm"><p className="text-xs uppercase tracking-[0.2em] text-slate-300">Business contact</p><div className="mt-4 text-2xl font-semibold">{business.phone || "+254 700 123 456"}</div><div className="mt-2 text-sm text-slate-300">{business.email || `hello@${business.slug}.co.ke`}</div><div className="mt-6 space-y-3 text-sm text-slate-200"><div>Mon - Sat: 8:00 AM - 7:00 PM</div><div>{business.area}, {business.city}</div></div><Link href={mapsUrl} target="_blank" className="mt-6 block w-full rounded-full bg-white px-4 py-3 text-center text-sm font-semibold text-slate-900">Open in Maps</Link></div></aside>
       </div></main>
     </div>
