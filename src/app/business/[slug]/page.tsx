@@ -3,19 +3,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BookingForm } from "@/components/booking-form";
 import { LeadRequestForm } from "@/components/lead-request-form";
-import { getBusinessBySlug } from "@/lib/store";
-import { getDb } from "@/lib/db";
+import { getBusinessBySlug, getServicesForBusiness } from "@/lib/store";
+
+export const dynamic = "force-dynamic";
 
 export default async function BusinessPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const business = await getBusinessBySlug(slug);
   if (!business) notFound();
 
-  const db = getDb();
-  const businessRow = db.prepare("SELECT id FROM businesses WHERE slug = ?").get(slug) as { id: string } | undefined;
-  const services = businessRow
-    ? db.prepare("SELECT id, name, description, price FROM services WHERE business_id = ? ORDER BY rowid DESC").all(businessRow.id) as { id: string; name: string; description: string; price: number }[]
-    : [];
+  const services = await getServicesForBusiness(business.id);
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${business.location.latitude},${business.location.longitude}`;
 
   return (

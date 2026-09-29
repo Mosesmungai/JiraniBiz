@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createLead } from "@/lib/store";
+import { BusinessNotFoundError, createLead } from "@/lib/store";
 
 export async function POST(request: Request) {
   try {
@@ -13,7 +13,6 @@ export async function POST(request: Request) {
 
     const lead = await createLead({
       businessSlug,
-      businessName,
       name,
       phone,
       message,
@@ -21,6 +20,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(lead, { status: 201 });
   } catch (error) {
+    if (error instanceof BusinessNotFoundError) {
+      return NextResponse.json({ error: "Business not found." }, { status: 404 });
+    }
     console.error("Lead creation failed", error);
     return NextResponse.json({ error: "Unable to submit request." }, { status: 500 });
   }

@@ -15,7 +15,7 @@ const accessHierarchy = [
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
-  const user = getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
+  const user = await getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
 
   if (!user || (user.role !== "business_owner" && user.role !== "admin")) {
     redirect("/auth");

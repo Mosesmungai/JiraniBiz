@@ -1,16 +1,24 @@
 import Image from "next/image";
 import Link from "next/link";
-import { allBusinesses, categories, featuredBusinesses } from "@/lib/data";
+import { categories } from "@/lib/data";
+import { getBusinesses } from "@/lib/store";
 
-export default function Home() {
-  const averageRating = (allBusinesses.reduce((sum, business) => sum + business.rating, 0) / allBusinesses.length).toFixed(1);
-  const totalReviews = allBusinesses.reduce((sum, business) => sum + business.reviews, 0);
-  const countriesServed = new Set(allBusinesses.map((business) => business.country)).size;
-  const listingCount = allBusinesses.length;
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const businesses = await getBusinesses();
+  const featuredBusinesses = businesses.slice(0, 3);
+  const featuredBusiness = businesses[0];
+  const averageRating = businesses.length
+    ? (businesses.reduce((sum, business) => sum + business.rating, 0) / businesses.length).toFixed(1)
+    : "0.0";
+  const totalReviews = businesses.reduce((sum, business) => sum + business.reviews, 0);
+  const countriesServed = new Set(businesses.map((business) => business.country)).size;
+  const listingCount = businesses.length;
   const stats = [
     { value: String(countriesServed), label: "countries served" },
     { value: `${averageRating}/5`, label: "average business rating" },
-    { value: `${listingCount}`, label: "verified businesses" },
+    { value: `${listingCount}`, label: "business listings" },
     { value: `${totalReviews.toLocaleString()}`, label: "customer reviews" },
   ];
 
@@ -100,33 +108,37 @@ export default function Home() {
                   <div className="mt-1 text-sm text-slate-300">Business profiles live across the region</div>
                 </div>
                 <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Featured</div>
-                      <div className="mt-2 text-xl font-semibold text-slate-900">Westgate Cleaning Co.</div>
-                    </div>
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                      Verified
-                    </span>
-                  </div>
-                  <div className="overflow-hidden rounded-2xl">
-                    <Image
-                      src="https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80"
-                      alt="Featured business"
-                      width={800}
-                      height={500}
-                      className="h-56 w-full object-cover"
-                    />
-                  </div>
-                  <div className="mt-4 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-sm text-slate-500">Starting from</div>
-                      <div className="text-lg font-semibold text-slate-900">KES 2,200</div>
-                    </div>
-                    <Link href="/business/westgate-cleaning-co" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-                      View profile
-                    </Link>
-                  </div>
+                  {featuredBusiness ? (
+                    <>
+                      <div className="mb-4 flex items-center justify-between">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Featured</div>
+                          <div className="mt-2 text-xl font-semibold text-slate-900">{featuredBusiness.name}</div>
+                        </div>
+                        {featuredBusiness.verified && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Verified</span>}
+                      </div>
+                      <div className="overflow-hidden rounded-2xl">
+                        <Image
+                          src={featuredBusiness.image}
+                          alt={featuredBusiness.name}
+                          width={800}
+                          height={500}
+                          className="h-56 w-full object-cover"
+                        />
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm text-slate-500">Starting from</div>
+                          <div className="text-lg font-semibold text-slate-900">KES {featuredBusiness.priceFrom.toLocaleString()}</div>
+                        </div>
+                        <Link href={`/business/${featuredBusiness.slug}`} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+                          View profile
+                        </Link>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="py-12 text-center text-sm text-slate-600">No business listings are available yet.</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -162,7 +174,7 @@ export default function Home() {
                 <div className="mt-5 text-xl font-semibold text-slate-900">{category.name}</div>
                 <div className="mt-2 text-sm text-slate-600">{category.subtitle}</div>
                 <div className="mt-6 flex items-center justify-between">
-                  <div className="text-sm text-slate-500">{listingCount} local listings</div>
+                  <div className="text-sm text-slate-500">{businesses.filter((business) => business.category === category.name).length} local listings</div>
                   <Link href="/discover" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700">
                     Browse
                   </Link>
@@ -184,7 +196,7 @@ export default function Home() {
           </div>
 
           <div className="mt-8 grid gap-6 xl:grid-cols-3">
-            {featuredBusinesses.map((business) => (
+            {featuredBusinesses.length ? featuredBusinesses.map((business) => (
               <article key={business.id} className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm">
                 <div className="overflow-hidden rounded-[24px]">
                   <Image src={business.image} alt={business.name} width={800} height={600} className="h-52 w-full object-cover" />
@@ -212,7 +224,11 @@ export default function Home() {
                   </div>
                 </div>
               </article>
-            ))}
+            )) : (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-600 xl:col-span-3">
+                No business listings are available yet.
+              </div>
+            )}
           </div>
         </section>
 

@@ -1,6 +1,19 @@
-import { defaultBusinesses, type Business } from "@/lib/data";
-import { getDb } from "@/lib/db";
+import { createHash, randomUUID } from "node:crypto";
+import type { DocumentData, DocumentSnapshot, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { AuthUser } from "@/lib/auth";
+import { getFirestoreDb } from "@/lib/firebase-admin";
+import {
+  bookingsCollection,
+  businessSlugsCollection,
+  businessesCollection,
+  leadsCollection,
+  reviewsCollection,
+  servicesCollection,
+} from "@/lib/firestore";
 import { geocodeBusinessLocation } from "@/lib/location";
+import type { Business, BusinessVerification, SocialLinks } from "@/lib/data";
+
+type Country = Business["country"];
 
 export type Lead = {
   id: string;
@@ -15,66 +28,288 @@ export type Lead = {
   createdAt: string;
 };
 
-function mapBusiness(row: any): Business {
-  const payload = row.payload ? JSON.parse(row.payload) : {};
+export type Service = {
+  id: string;
+  businessId: string;
+  name: string;
+  description: string;
+  price: number;
+  createdAt: string;
+};
+
+export type Booking = {
+  id: string;
+  businessId: string;
+  customerId: string | null;
+  serviceId: string | null;
+  scheduledAt: string;
+  status: "Requested" | "Confirmed" | "Completed" | "Cancelled";
+  notes: string;
+  createdAt: string;
+};
+
+export type Review = {
+  id: string;
+  businessId: string;
+  customerId: string | null;
+  rating: number;
+  comment: string;
+  createdAt: string;
+};
+
+export class BusinessNotFoundError extends Error {
+  constructor() {
+    super("Business not found");
+    this.name = "BusinessNotFoundError";
+  }
+}
+
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid business document: ${field} is not a boolean.`);
+  }
+  return value;
+}
+
+function requiredStringAllowEmpty(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Invalid business document: ${field} is not a string.`);
+  }
+  return value;
+}
+
+export class ServiceNotFoundError extends Error {
+  constructor() {
+    super("Selected service does not belong to this business.");
+    this.name = "ServiceNotFoundError";
+  }
+}
+
+export class NotBusinessOwnerError extends Error {
+  constructor() {
+    super("You do not own this business.");
+    this.name = "NotBusinessOwnerError";
+  }
+}
+
+export class DuplicateReviewError extends Error {
+  constructor() {
+    super("You have already reviewed this business.");
+    this.name = "DuplicateReviewError";
+  }
+}
+
+export class BusinessSlugConflictError extends Error {
+  constructor() {
+    super("A business with this slug already exists.");
+    this.name = "BusinessSlugConflictError";
+  }
+}
+
+function record(value: unknown, label: string): DocumentData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Invalid ${label} data in Firestore.`);
+  }
+  return value as DocumentData;
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Invalid business document: ${field} is missing.`);
+  }
+  return value;
+}
+
+function requiredNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid business document: ${field} is not a number.`);
+  }
+  return value;
+}
+
+function locationFrom(value: unknown, label: string) {
+  const location = record(value, label);
   return {
-    id: row.id,
-    slug: row.slug,
-    name: row.name,
-    category: row.category,
-    city: row.city,
-    area: row.area,
-    country: row.country,
-    rating: row.rating ?? 0,
-    reviews: row.reviews ?? 0,
-    image: payload.image ?? "https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=1200&q=80",
-    description: row.description ?? "",
-    services: payload.services ?? [],
-    priceFrom: row.price_from ?? 0,
-    verified: Boolean(row.verified),
-    badge: row.badge ?? "New",
-    phone: row.phone ?? "",
-    email: row.email ?? "",
-    location: row.location ? JSON.parse(row.location) : undefined,
-    socials: payload.socials ?? { instagram: "", facebook: "", x: "", whatsapp: "", website: "" },
-    verification: payload.verification ?? {
-      status: row.verified ? "verified" : "pending",
-      required: !row.verified,
-      photoUploads: [],
-    },
+    label: requiredString(location.label, `${label}.label`),
+    latitude: requiredNumber(location.latitude, `${label}.latitude`),
+    longitude: requiredNumber(location.longitude, `${label}.longitude`),
+  };
+}
+
+function verificationFrom(value: unknown): BusinessVerification {
+  const verification = record(value, "business verification");
+  if (
+    verification.status !== "pending" &&
+    verification.status !== "verified" &&
+    verification.status !== "rejected"
+  ) {
+    throw new Error("Invalid business document: verification status is invalid.");
+  }
+  if (typeof verification.required !== "boolean" || !Array.isArray(verification.photoUploads)) {
+    throw new Error("Invalid business document: verification details are invalid.");
+  }
+
+  return {
+    status: verification.status,
+    required: verification.required,
+    gpsProof: locationFrom(verification.gpsProof, "verification GPS proof"),
+    photoUploads: verification.photoUploads.map((photo: unknown) => requiredString(photo, "verification photo")),
+  };
+}
+
+function socialsFrom(value: unknown): SocialLinks {
+  const socials = record(value, "business social links");
+  const entries = ["instagram", "facebook", "x", "whatsapp", "website"] as const;
+  return Object.fromEntries(
+    entries.flatMap((key) => {
+      const link = socials[key];
+      if (link === undefined || link === null || link === "") return [];
+      if (typeof link !== "string") throw new Error(`Invalid business document: social link ${key} is invalid.`);
+      return [[key, link]];
+    }),
+  );
+}
+
+function businessFromSnapshot(snapshot: DocumentSnapshot): Business {
+  const data = snapshot.data();
+  if (!snapshot.exists || !data) {
+    throw new Error(`Business document ${snapshot.id} does not exist.`);
+  }
+  if (data.country !== "Kenya" && data.country !== "Uganda" && data.country !== "Tanzania") {
+    throw new Error(`Invalid business document ${snapshot.id}: country is invalid.`);
+  }
+  if (!Array.isArray(data.services) || data.services.some((service: unknown) => typeof service !== "string")) {
+    throw new Error(`Invalid business document ${snapshot.id}: services are invalid.`);
+  }
+
+  return {
+    id: snapshot.id,
+    slug: requiredString(data.slug, "slug"),
+    name: requiredString(data.name, "name"),
+    category: requiredString(data.category, "category"),
+    area: requiredString(data.area, "area"),
+    city: requiredString(data.city, "city"),
+    country: data.country,
+    rating: requiredNumber(data.rating, "rating"),
+    reviews: requiredNumber(data.reviews, "reviews"),
+    image: requiredString(data.image, "image"),
+    description: requiredStringAllowEmpty(data.description, "description"),
+    services: data.services,
+    priceFrom: requiredNumber(data.priceFrom, "priceFrom"),
+    verified: requiredBoolean(data.verified, "verified"),
+    badge: requiredString(data.badge, "badge"),
+    phone: typeof data.phone === "string" ? data.phone : undefined,
+    email: typeof data.email === "string" ? data.email : undefined,
+    location: locationFrom(data.location, "business location"),
+    socials: socialsFrom(data.socials),
+    verification: verificationFrom(data.verification),
+  };
+}
+
+function leadFromSnapshot(snapshot: QueryDocumentSnapshot, business: Business): Lead {
+  const data = snapshot.data();
+  const status = data.status;
+  if (status !== "New" && status !== "Contacted" && status !== "Booked" && status !== "Closed") {
+    throw new Error(`Invalid lead document ${snapshot.id}: status is invalid.`);
+  }
+  return {
+    id: snapshot.id,
+    businessId: business.id,
+    businessSlug: business.slug,
+    businessName: business.name,
+    customerId: typeof data.customerId === "string" ? data.customerId : undefined,
+    name: requiredString(data.name, "lead name"),
+    phone: requiredString(data.phone, "lead phone"),
+    message: requiredString(data.message, "lead message"),
+    status,
+    createdAt: requiredString(data.createdAt, "lead createdAt"),
+  };
+}
+
+function serviceFromSnapshot(snapshot: QueryDocumentSnapshot): Service {
+  const data = snapshot.data();
+  return {
+    id: snapshot.id,
+    businessId: requiredString(data.businessId, "service businessId"),
+    name: requiredString(data.name, "service name"),
+    description: typeof data.description === "string" ? data.description : "",
+    price: requiredNumber(data.price, "service price"),
+    createdAt: requiredString(data.createdAt, "service createdAt"),
+  };
+}
+
+function bookingFromSnapshot(snapshot: QueryDocumentSnapshot): Booking {
+  const data = snapshot.data();
+  const status = data.status;
+  if (
+    status !== "Requested" &&
+    status !== "Confirmed" &&
+    status !== "Completed" &&
+    status !== "Cancelled"
+  ) {
+    throw new Error(`Invalid booking document ${snapshot.id}: status is invalid.`);
+  }
+  return {
+    id: snapshot.id,
+    businessId: requiredString(data.businessId, "booking businessId"),
+    customerId: typeof data.customerId === "string" ? data.customerId : null,
+    serviceId: typeof data.serviceId === "string" ? data.serviceId : null,
+    scheduledAt: requiredString(data.scheduledAt, "booking scheduledAt"),
+    status,
+    notes: typeof data.notes === "string" ? data.notes : "",
+    createdAt: requiredString(data.createdAt, "booking createdAt"),
+  };
+}
+
+function reviewFromSnapshot(snapshot: QueryDocumentSnapshot): Review {
+  const data = snapshot.data();
+  const rating = requiredNumber(data.rating, "review rating");
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new Error(`Invalid review document ${snapshot.id}: rating is invalid.`);
+  }
+  return {
+    id: snapshot.id,
+    businessId: requiredString(data.businessId, "review businessId"),
+    customerId: typeof data.customerId === "string" ? data.customerId : null,
+    rating,
+    comment: requiredStringAllowEmpty(data.comment, "review comment"),
+    createdAt: requiredString(data.createdAt, "review createdAt"),
   };
 }
 
 export async function getBusinesses(): Promise<Business[]> {
-  const rows = getDb().prepare("SELECT * FROM businesses ORDER BY rowid DESC").all() as any[];
-  return rows.map(mapBusiness);
+  const snapshot = await businessesCollection().get();
+  return snapshot.docs
+    .map(businessFromSnapshot)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function getBusinessById(id: string): Promise<Business | null> {
+  const snapshot = await businessesCollection().doc(id).get();
+  return snapshot.exists ? businessFromSnapshot(snapshot) : null;
 }
 
 export async function getBusinessBySlug(slug: string): Promise<Business | null> {
-  const row = getDb().prepare("SELECT * FROM businesses WHERE slug = ?").get(slug) as any;
-  return row ? mapBusiness(row) : null;
+  const slugSnapshot = await businessSlugsCollection().doc(slug).get();
+  const businessId = slugSnapshot.data()?.businessId;
+  const snapshot = typeof businessId === "string"
+    ? await businessesCollection().doc(businessId).get()
+    : (await businessesCollection().where("slug", "==", slug).limit(1).get()).docs[0];
+  return snapshot?.exists ? businessFromSnapshot(snapshot) : null;
 }
 
 export async function getLeads(): Promise<Lead[]> {
-  const rows = getDb().prepare(`
-    SELECT l.*, b.slug AS business_slug, b.name AS business_name
-    FROM leads l
-    JOIN businesses b ON b.id = l.business_id
-    ORDER BY l.rowid DESC
-  `).all() as any[];
-
-  return rows.map((row) => ({
-    id: row.id,
-    businessId: row.business_id,
-    businessSlug: row.business_slug,
-    businessName: row.business_name,
-    customerId: row.customer_id ?? undefined,
-    name: row.name,
-    phone: row.phone,
-    message: row.message,
-    status: row.status,
-    createdAt: row.created_at,
-  }));
+  const [leadSnapshot, businesses] = await Promise.all([
+    leadsCollection().get(),
+    businessesCollection().get(),
+  ]);
+  const businessesById = new Map(businesses.docs.map((snapshot) => [snapshot.id, businessFromSnapshot(snapshot)]));
+  return leadSnapshot.docs
+    .flatMap((snapshot) => {
+      const business = businessesById.get(snapshot.data().businessId);
+      return business ? [leadFromSnapshot(snapshot, business)] : [];
+    })
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 export async function createLead(input: {
@@ -84,14 +319,11 @@ export async function createLead(input: {
   message: string;
   customerId?: string;
 }) {
-  const business = getDb()
-    .prepare("SELECT id, slug, name FROM businesses WHERE slug = ?")
-    .get(input.businessSlug) as { id: string; slug: string; name: string } | undefined;
+  const business = await getBusinessBySlug(input.businessSlug);
+  if (!business) throw new BusinessNotFoundError();
 
-  if (!business) throw new Error("Business not found");
-
-  const nextLead: Lead = {
-    id: `lead-${crypto.randomUUID()}`,
+  const lead: Lead = {
+    id: `lead-${randomUUID()}`,
     businessId: business.id,
     businessSlug: business.slug,
     businessName: business.name,
@@ -102,22 +334,16 @@ export async function createLead(input: {
     status: "New",
     createdAt: new Date().toISOString(),
   };
-
-  getDb().prepare(`
-    INSERT INTO leads (id, business_id, customer_id, name, phone, message, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    nextLead.id,
-    nextLead.businessId,
-    nextLead.customerId ?? null,
-    nextLead.name,
-    nextLead.phone,
-    nextLead.message,
-    nextLead.status,
-    nextLead.createdAt,
-  );
-
-  return nextLead;
+  await leadsCollection().doc(lead.id).create({
+    businessId: lead.businessId,
+    ...(input.customerId ? { customerId: input.customerId } : {}),
+    name: lead.name,
+    phone: lead.phone,
+    message: lead.message,
+    status: lead.status,
+    createdAt: lead.createdAt,
+  });
+  return lead;
 }
 
 export async function createBusiness(input: {
@@ -129,16 +355,15 @@ export async function createBusiness(input: {
   description: string;
   phone: string;
   email: string;
-  country?: "Kenya" | "Uganda" | "Tanzania";
-  socials?: Partial<Business["socials"]>;
+  country?: Country;
+  socials?: Partial<SocialLinks>;
 }) {
-  const createdAt = Date.now();
-  const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") + `-${createdAt}`;
+  const createdAt = new Date().toISOString();
+  const slug = `${input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-${Date.now()}`;
   const country = input.country ?? "Kenya";
   const location = await geocodeBusinessLocation(input.city, input.area, country);
-  const id = `biz-${createdAt}`;
-
-  const newBusiness: Business = {
+  const id = `biz-${randomUUID()}`;
+  const business: Business = {
     id,
     slug,
     name: input.name,
@@ -172,55 +397,187 @@ export async function createBusiness(input: {
     },
   };
 
-  getDb().prepare(`
-    INSERT INTO businesses (
-      id, owner_id, slug, name, category, area, city, country,
-      rating, reviews, description, price_from, verified, badge,
-      phone, email, location, payload
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    input.ownerId ?? null,
-    slug,
-    input.name,
-    input.category,
-    input.area,
-    input.city,
-    country,
-    0,
-    0,
-    input.description,
-    0,
-    0,
-    "New",
-    input.phone,
-    input.email,
-    location ? JSON.stringify(location) : null,
-    JSON.stringify({ image: newBusiness.image, services: newBusiness.services, socials: newBusiness.socials, verification: newBusiness.verification }),
-  );
+  const db = getFirestoreDb();
+  const slugRef = businessSlugsCollection().doc(slug);
+  const businessRef = businessesCollection().doc(id);
+  await db.runTransaction(async (transaction) => {
+    const existingSlug = await transaction.get(slugRef);
+    if (existingSlug.exists) throw new BusinessSlugConflictError();
+    transaction.create(businessRef, {
+      ...business,
+      ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+      createdAt,
+    });
+    transaction.create(slugRef, { businessId: id });
+  });
+  return business;
+}
 
-  return newBusiness;
+export async function getServicesForBusiness(businessId: string): Promise<Service[]> {
+  const snapshot = await servicesCollection().where("businessId", "==", businessId).get();
+  return snapshot.docs
+    .map(serviceFromSnapshot)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export async function createService(input: {
+  businessId: string;
+  name: string;
+  description: string;
+  price: number;
+  user: AuthUser;
+}) {
+  const businessSnapshot = await businessesCollection().doc(input.businessId).get();
+  if (!businessSnapshot.exists) throw new BusinessNotFoundError();
+  const ownerId = businessSnapshot.data()?.ownerId;
+  if (input.user.role === "business_owner" && ownerId !== input.user.id) {
+    throw new NotBusinessOwnerError();
+  }
+
+  const service: Service = {
+    id: `service-${randomUUID()}`,
+    businessId: input.businessId,
+    name: input.name,
+    description: input.description,
+    price: input.price,
+    createdAt: new Date().toISOString(),
+  };
+  const { id, ...document } = service;
+  await servicesCollection().doc(id).create(document);
+  return service;
+}
+
+export async function createBooking(input: {
+  businessId: string;
+  customerId: string;
+  serviceId?: string;
+  scheduledAt: string;
+  notes: string;
+}): Promise<Booking> {
+  const booking: Booking = {
+    id: `booking-${randomUUID()}`,
+    businessId: input.businessId,
+    customerId: input.customerId,
+    serviceId: input.serviceId ?? null,
+    scheduledAt: input.scheduledAt,
+    status: "Requested",
+    notes: input.notes,
+    createdAt: new Date().toISOString(),
+  };
+  const businessRef = businessesCollection().doc(input.businessId);
+  const serviceRef = input.serviceId ? servicesCollection().doc(input.serviceId) : undefined;
+  const bookingRef = bookingsCollection().doc(booking.id);
+
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const business = await transaction.get(businessRef);
+    if (!business.exists) throw new BusinessNotFoundError();
+    if (serviceRef) {
+      const service = await transaction.get(serviceRef);
+      if (!service.exists || service.data()?.businessId !== input.businessId) {
+        throw new ServiceNotFoundError();
+      }
+    }
+    transaction.create(bookingRef, {
+      businessId: booking.businessId,
+      customerId: booking.customerId,
+      serviceId: booking.serviceId,
+      scheduledAt: booking.scheduledAt,
+      status: booking.status,
+      notes: booking.notes,
+      createdAt: booking.createdAt,
+    });
+  });
+
+  return booking;
+}
+
+export async function getBookingsForUser(user: AuthUser): Promise<Booking[]> {
+  const snapshot = user.role === "business_owner"
+    ? await businessesCollection().where("ownerId", "==", user.id).get()
+    : undefined;
+  const businessIds = snapshot?.docs.map((business) => business.id);
+  const bookings = user.role === "business_owner"
+    ? businessIds?.length
+      ? (await Promise.all(
+          Array.from({ length: Math.ceil(businessIds.length / 30) }, (_, index) =>
+            bookingsCollection()
+              .where("businessId", "in", businessIds.slice(index * 30, (index + 1) * 30))
+              .get(),
+          ),
+        )).flatMap((result) => result.docs)
+      : []
+    : (await bookingsCollection().where("customerId", "==", user.id).get()).docs;
+
+  return bookings
+    .map(bookingFromSnapshot)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export async function getReviews(businessId: string): Promise<Review[]> {
+  const snapshot = await reviewsCollection().where("businessId", "==", businessId).get();
+  return snapshot.docs
+    .map(reviewFromSnapshot)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export async function createReview(input: {
+  businessId: string;
+  customerId: string;
+  rating: number;
+  comment: string;
+}): Promise<Review> {
+  const reviewId = `review-${createHash("sha256").update(`${input.businessId}:${input.customerId}`).digest("hex")}`;
+  const review: Review = {
+    id: reviewId,
+    businessId: input.businessId,
+    customerId: input.customerId,
+    rating: input.rating,
+    comment: input.comment,
+    createdAt: new Date().toISOString(),
+  };
+  const businessRef = businessesCollection().doc(input.businessId);
+  const reviewRef = reviewsCollection().doc(reviewId);
+
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const business = await transaction.get(businessRef);
+    if (!business.exists) throw new BusinessNotFoundError();
+    const existingReview = await transaction.get(reviewRef);
+    if (existingReview.exists) throw new DuplicateReviewError();
+    const businessReviews = await transaction.get(reviewsCollection().where("businessId", "==", input.businessId));
+    if (businessReviews.docs.some((snapshot) => snapshot.data().customerId === input.customerId)) {
+      throw new DuplicateReviewError();
+    }
+
+    const count = businessReviews.size;
+    const total = businessReviews.docs.reduce((sum, snapshot) => sum + requiredNumber(snapshot.data().rating, "review rating"), 0);
+    transaction.create(reviewRef, {
+      businessId: review.businessId,
+      customerId: review.customerId,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.createdAt,
+    });
+    transaction.update(businessRef, {
+      rating: Number(((total + review.rating) / (count + 1)).toFixed(1)),
+      reviews: count + 1,
+    });
+  });
+
+  return review;
 }
 
 export async function getDashboardData(ownerId?: string) {
-  const businesses = await getBusinesses();
-  const leads = await getLeads();
-  const ownedBusinesses = ownerId
-    ? businesses.filter((business) => {
-        const row = getDb().prepare("SELECT owner_id FROM businesses WHERE id = ?").get(business.id) as { owner_id?: string } | undefined;
-        return row?.owner_id === ownerId;
-      })
-    : businesses;
-  const businessIds = new Set(ownedBusinesses.map((business) => business.id));
-  const ownedLeads = ownerId ? leads.filter((lead) => businessIds.has(lead.businessId)) : leads;
+  const businesses = ownerId
+    ? (await businessesCollection().where("ownerId", "==", ownerId).get()).docs.map(businessFromSnapshot)
+    : await getBusinesses();
+  const businessIds = new Set(businesses.map((business) => business.id));
+  const leads = (await getLeads()).filter((lead) => businessIds.has(lead.businessId));
 
   return {
-    businessCount: ownedBusinesses.length,
-    leadCount: ownedLeads.length,
-    totalRevenue: ownedBusinesses.reduce((sum, business) => sum + business.priceFrom, 0),
-    businesses: ownedBusinesses.slice(0, 5),
-    leads: ownedLeads.slice(0, 4),
+    businessCount: businesses.length,
+    leadCount: leads.length,
+    totalRevenue: businesses.reduce((sum, business) => sum + business.priceFrom, 0),
+    businesses: businesses.slice(0, 5),
+    leads: leads.slice(0, 4),
   };
 }
-
-export const seededBusinesses = defaultBusinesses;

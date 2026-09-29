@@ -11,7 +11,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const cookieStore = await cookies();
-    const user = getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
+    const user = await getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
 
     if (!user || (user.role !== "business_owner" && user.role !== "admin")) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });

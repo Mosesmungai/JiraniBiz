@@ -3,7 +3,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { categories, defaultBusinesses, type Business } from "@/lib/data";
+import { categories, type Business } from "@/lib/data";
+
+async function requestBusinesses(): Promise<Business[]> {
+  const response = await fetch("/api/businesses");
+  if (!response.ok) throw new Error(`Request failed (${response.status}).`);
+  const data = await response.json();
+  if (!Array.isArray(data)) throw new Error("The businesses response is invalid.");
+  return data;
+}
 
 const userLocationDefaults = {
   label: "Nairobi, Kenya",
@@ -30,40 +38,44 @@ export default function DiscoverPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [radiusKm, setRadiusKm] = useState(30);
   const [userLocation, setUserLocation] = useState(userLocationDefaults);
-  const [businesses, setBusinesses] = useState<Business[]>(defaultBusinesses);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadBusinesses() {
-      try {
-        const response = await fetch("/api/businesses");
-        if (!response.ok) return;
+    let active = true;
+    requestBusinesses().then(
+      (data) => {
+        if (!active) return;
+        setBusinesses(data);
+        setLoading(false);
+      },
+      (error: unknown) => {
+        if (!active) return;
+        setLoadError(error instanceof Error ? error.message : "Unexpected response from the server.");
+        setLoading(false);
+      },
+    );
 
-        const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setBusinesses(data as Business[]);
-        }
-      } catch {
-        setBusinesses(defaultBusinesses);
-      }
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          setUserLocation({
+            label: "Your current location",
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          });
+        },
+        () => {
+          setUserLocation(userLocationDefaults);
+        },
+        { enableHighAccuracy: true, timeout: 8000 },
+      );
     }
 
-    loadBusinesses();
-
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
-
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setUserLocation({
-          label: "Your current location",
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-        });
-      },
-      () => {
-        setUserLocation(userLocationDefaults);
-      },
-      { enableHighAccuracy: true, timeout: 8000 },
-    );
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredBusinesses = useMemo(() => {
@@ -238,7 +250,31 @@ export default function DiscoverPage() {
               </div>
             </div>
 
-            {filteredBusinesses.length === 0 ? (
+            {loadError ? (
+              <div role="alert" className="rounded-3xl border border-rose-200 bg-rose-50 p-10 text-center text-rose-800">
+                <p>Unable to load businesses from Firestore. {loadError}</p>
+                <button
+                  onClick={async () => {
+                    setLoading(true);
+                    setLoadError(null);
+                    try {
+                      setBusinesses(await requestBusinesses());
+                    } catch (error) {
+                      setLoadError(error instanceof Error ? error.message : "Unexpected response from the server.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="mt-4 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : loading ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-slate-600" aria-live="polite">
+                Loading businesses...
+              </div>
+            ) : filteredBusinesses.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-600">
                 No businesses match the current filters. Try widening your search radius or changing the category.
               </div>
@@ -310,4 +346,3 @@ export default function DiscoverPage() {
     </div>
   );
 }
-

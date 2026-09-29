@@ -1,5 +1,7 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { getDb } from "@/lib/db";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import type { DocumentData } from "firebase-admin/firestore";
+import { getFirestoreDb } from "@/lib/firebase-admin";
+import { sessionsCollection, userEmailsCollection, usersCollection } from "@/lib/firestore";
 
 export type UserRole = "customer" | "business_owner" | "admin";
 
@@ -14,8 +16,42 @@ export type AuthUser = {
 const SESSION_DAYS = 30;
 const SESSION_COOKIE = "jiranibiz_session";
 
+export class DuplicateEmailError extends Error {
+  constructor() {
+    super("An account with this email already exists");
+    this.name = "DuplicateEmailError";
+  }
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function emailDocumentId(email: string) {
+  return createHash("sha256").update(email).digest("hex");
+}
+
+function isUserRole(value: unknown): value is UserRole {
+  return value === "customer" || value === "business_owner" || value === "admin";
+}
+
+function userFromDocument(data: DocumentData | undefined, id: string): AuthUser | null {
+  if (
+    !data ||
+    typeof data.name !== "string" ||
+    typeof data.email !== "string" ||
+    !isUserRole(data.role)
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    name: data.name,
+    email: data.email,
+    phone: typeof data.phone === "string" ? data.phone : null,
+    role: data.role,
+  };
 }
 
 export function hashPassword(password: string) {
@@ -33,7 +69,7 @@ export function verifyPassword(password: string, storedHash: string) {
   return expected.length === actual.length && timingSafeEqual(actual, expected);
 }
 
-export function createUser(input: {
+export async function createUser(input: {
   name: string;
   email: string;
   phone?: string;
@@ -46,71 +82,95 @@ export function createUser(input: {
 
   if (!email || !input.name.trim()) throw new Error("Name and email are required");
 
-  getDb().prepare(`
-    INSERT INTO users (id, name, email, phone, role, password_hash)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, input.name.trim(), email, input.phone?.trim() || null, role, hashPassword(input.password));
+  const name = input.name.trim();
+  const phone = input.phone?.trim() || null;
+  const passwordHash = hashPassword(input.password);
+  const userRef = usersCollection().doc(id);
+  const emailRef = userEmailsCollection().doc(emailDocumentId(email));
+  const db = getFirestoreDb();
 
-  return { id, name: input.name.trim(), email, phone: input.phone?.trim() || null, role } as AuthUser;
+  await db.runTransaction(async (transaction) => {
+    const emailIndex = await transaction.get(emailRef);
+    const existingUsers = await transaction.get(usersCollection().where("email", "==", email).limit(1));
+    if (emailIndex.exists || !existingUsers.empty) throw new DuplicateEmailError();
+
+    transaction.create(userRef, {
+      id,
+      name,
+      email,
+      phone,
+      role,
+      passwordHash,
+      createdAt: new Date().toISOString(),
+    });
+    transaction.create(emailRef, { userId: id, email });
+  });
+
+  return { id, name, email, phone, role };
 }
 
-export function authenticateUser(emailInput: string, password: string): AuthUser | null {
+export async function authenticateUser(emailInput: string, password: string): Promise<AuthUser | null> {
   const email = normalizeEmail(emailInput);
-  const user = getDb().prepare(`
-    SELECT id, name, email, phone, role, password_hash
-    FROM users WHERE email = ?
-  `).get(email) as (AuthUser & { password_hash: string | null }) | undefined;
+  const emailIndex = await userEmailsCollection().doc(emailDocumentId(email)).get();
+  const indexedUserId = emailIndex.data()?.userId;
+  const userId = typeof indexedUserId === "string" ? indexedUserId : undefined;
+  const userSnapshot = userId
+    ? await usersCollection().doc(userId).get()
+    : (await usersCollection().where("email", "==", email).limit(1).get()).docs[0];
+  const data = userSnapshot?.data();
+  const user = userFromDocument(data, userSnapshot?.id ?? "");
+  const passwordHash = data?.passwordHash ?? data?.password_hash;
 
-  if (!user?.password_hash || !verifyPassword(password, user.password_hash)) return null;
-
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    phone: user.phone,
-    role: user.role,
-  };
+  if (!user || typeof passwordHash !== "string" || !verifyPassword(password, passwordHash)) return null;
+  return user;
 }
 
 function hashToken(token: string) {
   return createHmac("sha256", process.env.SESSION_SECRET ?? "jiranibiz-development-secret").update(token).digest("hex");
 }
 
-export function createSession(userId: string) {
+export async function createSession(userId: string) {
   const token = randomBytes(32).toString("hex");
   const id = `session-${randomBytes(12).toString("hex")}`;
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-
-  getDb().prepare(`
-    INSERT INTO sessions (id, user_id, token_hash, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(id, userId, hashToken(token), expiresAt);
+  const tokenHash = hashToken(token);
+  await sessionsCollection().doc(tokenHash).create({
+    id,
+    userId,
+    tokenHash,
+    expiresAt,
+    createdAt: new Date().toISOString(),
+  });
 
   return { token, expiresAt };
 }
 
-export function getUserFromSession(token: string | undefined): AuthUser | null {
+export async function getUserFromSession(token: string | undefined): Promise<AuthUser | null> {
   if (!token) return null;
 
-  const row = getDb().prepare(`
-    SELECT u.id, u.name, u.email, u.phone, u.role, s.expires_at
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
-  `).get(hashToken(token)) as (AuthUser & { expires_at: string }) | undefined;
-
-  if (!row) return null;
-  if (new Date(row.expires_at).getTime() <= Date.now()) {
-    getDb().prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+  const sessionRef = sessionsCollection().doc(hashToken(token));
+  const sessionSnapshot = await sessionRef.get();
+  if (!sessionSnapshot.exists) return null;
+  const session = sessionSnapshot.data();
+  if (!session || typeof session.userId !== "string" || typeof session.expiresAt !== "string") {
+    throw new Error(`Session document ${sessionSnapshot.id} is malformed.`);
+  }
+  const expiresAt = new Date(session.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt)) {
+    throw new Error(`Session document ${sessionSnapshot.id} has an invalid expiration date.`);
+  }
+  if (expiresAt <= Date.now()) {
+    await sessionRef.delete();
     return null;
   }
 
-  return { id: row.id, name: row.name, email: row.email, phone: row.phone, role: row.role };
+  const userSnapshot = await usersCollection().doc(session.userId).get();
+  return userFromDocument(userSnapshot.data(), userSnapshot.id);
 }
 
-export function destroySession(token: string | undefined) {
+export async function destroySession(token: string | undefined) {
   if (!token) return;
-  getDb().prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+  await sessionsCollection().doc(hashToken(token)).delete();
 }
 
 export { SESSION_COOKIE };
