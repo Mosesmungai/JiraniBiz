@@ -17,6 +17,7 @@ import {
 } from "@/lib/discovery-preferences";
 import { RecentSearches, rememberSearch } from "@/components/recent-activity";
 import { formatDistance } from "@/lib/geo";
+import { SUBSCRIPTION_PLANS } from "@/lib/subscription";
 
 async function requestBusinesses(): Promise<Business[]> {
   const response = await fetch("/api/businesses");
@@ -247,8 +248,18 @@ function DiscoverContent() {
         return matchesCategory && matchesQuery && matchesManualLocation && withinRadius;
       })
       .sort((a, b) => {
-        if (!userLocation) return a.name.localeCompare(b.name);
-        return distanceKm(userLocation, a.location) - distanceKm(userLocation, b.location);
+        const aPromotionRank = a.promotionEligible && a.subscription
+          ? SUBSCRIPTION_PLANS[a.subscription.planId].rank
+          : 0;
+        const bPromotionRank = b.promotionEligible && b.subscription
+          ? SUBSCRIPTION_PLANS[b.subscription.planId].rank
+          : 0;
+        if (aPromotionRank !== bPromotionRank) return bPromotionRank - aPromotionRank;
+        if (userLocation) {
+          const distanceDifference = distanceKm(userLocation, a.location) - distanceKm(userLocation, b.location);
+          if (Math.abs(distanceDifference) > 0.25) return distanceDifference;
+        }
+        return b.rating - a.rating || b.reviews - a.reviews || a.name.localeCompare(b.name);
       });
   }, [businesses, locationMode, manualArea, manualCity, manualCountry, query, radiusKm, selectedCategory, userLocation]);
 
@@ -629,6 +640,11 @@ function DiscoverContent() {
                             {business.verified && (
                               <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
                                 Verified
+                              </span>
+                            )}
+                            {business.promotionEligible && business.subscription && (
+                              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-950">
+                                Promoted · {SUBSCRIPTION_PLANS[business.subscription.planId].label}
                               </span>
                             )}
                           </div>

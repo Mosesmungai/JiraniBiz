@@ -1,3 +1,5 @@
+import type { BusinessSubscription, PublicationStatus } from "@/lib/subscription";
+
 export type CategoryName = "Cleaning" | "Plumbing" | "Beauty" | "Repair" | "Events" | "Tutors";
 
 export type Category = {
@@ -15,7 +17,7 @@ export type SocialLinks = {
 };
 
 export type BusinessVerification = {
-  status: "pending" | "verified" | "rejected";
+  status: "pending" | "verified" | "review" | "rejected";
   required: boolean;
   gpsProof: {
     label: string;
@@ -34,9 +36,11 @@ export type Business = {
   area: string;
   city: string;
   country: "Kenya" | "Uganda" | "Tanzania";
+  region?: string;
   rating: number;
   reviews: number;
   image: string;
+  photos?: string[];
   description: string;
   services: string[];
   priceFrom: number;
@@ -52,6 +56,9 @@ export type Business = {
   };
   socials: SocialLinks;
   verification: BusinessVerification;
+  subscription?: BusinessSubscription;
+  publicationStatus?: PublicationStatus;
+  promotionEligible?: boolean;
 };
 
 export const categories: Category[] = [

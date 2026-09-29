@@ -13,5 +13,7 @@ export const servicesCollection = () => getFirestoreDb().collection("services");
 export const leadsCollection = () => getFirestoreDb().collection("leads");
 export const bookingsCollection = () => getFirestoreDb().collection("bookings");
 export const reviewsCollection = () => getFirestoreDb().collection("reviews");
+export const businessPaymentsCollection = () => getFirestoreDb().collection("businessPayments");
+export const businessReviewsCollection = () => getFirestoreDb().collection("businessReviews");
 export const userPreferencesCollection = (userId: string) =>
   usersCollection().doc(userId).collection("preferences");

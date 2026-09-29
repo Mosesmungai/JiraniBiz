@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { DocumentData, DocumentSnapshot, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { FieldValue, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import type { AuthUser } from "@/lib/auth";
 import { getFirestoreDb } from "@/lib/firebase-admin";
+import { getStorage } from "firebase-admin/storage";
 import {
   bookingsCollection,
+  businessPaymentsCollection,
+  businessReviewsCollection,
   businessSlugsCollection,
   businessesCollection,
   leadsCollection,
@@ -12,6 +15,14 @@ import {
 } from "@/lib/firestore";
 import { geocodeBusinessLocation, type DeviceLocation } from "@/lib/location";
 import type { Business, BusinessVerification, SocialLinks } from "@/lib/data";
+import {
+  addSubscriptionMonth,
+  getTopHundredPromotions,
+  isSubscriptionEntitled,
+  isSubscriptionPlanId,
+  type BusinessSubscription,
+  type PublicationStatus,
+} from "@/lib/subscription";
 
 type Country = Business["country"];
 
@@ -150,6 +161,7 @@ function verificationFrom(value: unknown): BusinessVerification {
   if (
     verification.status !== "pending" &&
     verification.status !== "verified" &&
+    verification.status !== "review" &&
     verification.status !== "rejected"
   ) {
     throw new Error("Invalid business document: verification status is invalid.");
@@ -163,6 +175,51 @@ function verificationFrom(value: unknown): BusinessVerification {
     required: verification.required,
     gpsProof: locationFrom(verification.gpsProof, "verification GPS proof"),
     photoUploads: verification.photoUploads.map((photo: unknown) => requiredString(photo, "verification photo")),
+  };
+}
+
+function subscriptionFrom(value: unknown): BusinessSubscription {
+  const subscription = record(value, "business subscription");
+  const status = subscription.status;
+  if (
+    !isSubscriptionPlanId(subscription.planId) ||
+    (status !== "trialing" &&
+      status !== "awaiting_payment" &&
+      status !== "payment_review" &&
+      status !== "renewal_review" &&
+      status !== "active" &&
+      status !== "expired")
+  ) {
+    throw new Error("Invalid business document: subscription plan or status is invalid.");
+  }
+  const region = subscription.region;
+  if (region !== undefined && typeof region !== "string") {
+    throw new Error("Invalid business document: subscription region is invalid.");
+  }
+  const paymentPreviousStatus = subscription.paymentPreviousStatus;
+  if (
+    paymentPreviousStatus !== undefined &&
+    paymentPreviousStatus !== "trialing" &&
+    paymentPreviousStatus !== "active" &&
+    paymentPreviousStatus !== "expired"
+  ) {
+    throw new Error("Invalid business document: previous payment status is invalid.");
+  }
+  if (subscription.paymentRecordId !== undefined && typeof subscription.paymentRecordId !== "string") {
+    throw new Error("Invalid business document: payment record ID is invalid.");
+  }
+  return {
+    planId: subscription.planId,
+    monthlyPriceKsh: requiredNumber(subscription.monthlyPriceKsh, "subscription monthly price"),
+    status,
+    startedAt: requiredString(subscription.startedAt, "subscription startedAt"),
+    expiresAt: requiredStringAllowEmpty(subscription.expiresAt, "subscription expiresAt"),
+    ...(typeof region === "string" ? { region } : {}),
+    ...(typeof subscription.paymentReference === "string" ? { paymentReference: subscription.paymentReference } : {}),
+    ...(typeof subscription.paymentSubmittedAt === "string" ? { paymentSubmittedAt: subscription.paymentSubmittedAt } : {}),
+    ...(typeof subscription.paymentConfirmedAt === "string" ? { paymentConfirmedAt: subscription.paymentConfirmedAt } : {}),
+    ...(typeof subscription.paymentRecordId === "string" ? { paymentRecordId: subscription.paymentRecordId } : {}),
+    ...(paymentPreviousStatus ? { paymentPreviousStatus } : {}),
   };
 }
 
@@ -190,6 +247,25 @@ function businessFromSnapshot(snapshot: DocumentSnapshot): Business {
   if (!Array.isArray(data.services) || data.services.some((service: unknown) => typeof service !== "string")) {
     throw new Error(`Invalid business document ${snapshot.id}: services are invalid.`);
   }
+  if (data.photos !== undefined && (!Array.isArray(data.photos) || data.photos.some((photo: unknown) => typeof photo !== "string"))) {
+    throw new Error(`Invalid business document ${snapshot.id}: photos are invalid.`);
+  }
+  if (data.region !== undefined && typeof data.region !== "string") {
+    throw new Error(`Invalid business document ${snapshot.id}: region is invalid.`);
+  }
+  const publicationStatus = data.publicationStatus;
+  const publicationStatuses: PublicationStatus[] = [
+    "pending_payment",
+    "pending_verification",
+    "pending_review",
+    "published",
+    "rejected",
+    "suspended",
+    "expired",
+  ];
+  if (publicationStatus !== undefined && (typeof publicationStatus !== "string" || !publicationStatuses.includes(publicationStatus as PublicationStatus))) {
+    throw new Error(`Invalid business document ${snapshot.id}: publication status is invalid.`);
+  }
 
   return {
     id: snapshot.id,
@@ -199,9 +275,11 @@ function businessFromSnapshot(snapshot: DocumentSnapshot): Business {
     area: requiredString(data.area, "area"),
     city: requiredString(data.city, "city"),
     country: data.country,
+    ...(typeof data.region === "string" ? { region: data.region } : {}),
     rating: requiredNumber(data.rating, "rating"),
     reviews: requiredNumber(data.reviews, "reviews"),
     image: requiredString(data.image, "image"),
+    ...(Array.isArray(data.photos) ? { photos: data.photos } : {}),
     description: requiredStringAllowEmpty(data.description, "description"),
     services: data.services,
     priceFrom: requiredNumber(data.priceFrom, "priceFrom"),
@@ -212,6 +290,8 @@ function businessFromSnapshot(snapshot: DocumentSnapshot): Business {
     location: locationFrom(data.location, "business location"),
     socials: socialsFrom(data.socials),
     verification: verificationFrom(data.verification),
+    ...(data.subscription !== undefined ? { subscription: subscriptionFrom(data.subscription) } : {}),
+    ...(typeof publicationStatus === "string" ? { publicationStatus: publicationStatus as PublicationStatus } : {}),
   };
 }
 
@@ -288,9 +368,70 @@ function reviewFromSnapshot(snapshot: QueryDocumentSnapshot): Review {
 
 export async function getBusinesses(): Promise<Business[]> {
   const snapshot = await businessesCollection().get();
-  return snapshot.docs
+  const visible = snapshot.docs
     .map(businessFromSnapshot)
+    .filter((business) => isPubliclyVisibleBusiness(business))
     .sort((left, right) => left.name.localeCompare(right.name));
+  const promotionEligible = getTopHundredPromotions(visible);
+  return Promise.all(visible.map((business) => signBusinessPhotos({
+    ...business,
+    promotionEligible: promotionEligible.has(business.id),
+  })));
+}
+
+async function signBusinessPhotos(business: Business): Promise<Business> {
+  const bucketName = process.env.FIREBASE_STORAGE_BUCKET;
+  if (!bucketName) return business;
+  const bucket = getStorage().bucket(bucketName);
+  const sign = async (value: string) => {
+    if (!value.startsWith("storage://")) return value;
+    const path = value.slice("storage://".length);
+    const [url] = await bucket.file(path).getSignedUrl({
+      action: "read",
+      expires: Date.now() + 60 * 60 * 1000,
+    });
+    return url;
+  };
+  const [image, photos] = await Promise.all([
+    sign(business.image),
+    Promise.all((business.photos ?? []).map(sign)),
+  ]);
+  const verificationPhotos = await Promise.all(business.verification.photoUploads.map(sign));
+  return {
+    ...business,
+    image,
+    photos,
+    verification: { ...business.verification, photoUploads: verificationPhotos },
+  };
+}
+
+export function isPubliclyVisibleBusiness(business: Business, now = new Date()): boolean {
+  if (business.publicationStatus === undefined) return true;
+  if (business.publicationStatus !== "published") return false;
+  return business.subscription
+    ? isSubscriptionEntitled(business.subscription, now)
+    : false;
+}
+
+export async function getBusinessesForOwner(ownerId: string): Promise<Business[]> {
+  const snapshot = await businessesCollection().where("ownerId", "==", ownerId).get();
+  const businesses = snapshot.docs
+    .map(businessFromSnapshot)
+    .sort((left, right) => right.name.localeCompare(left.name));
+  return Promise.all(businesses.map(signBusinessPhotos));
+}
+
+export async function getBusinessReviewQueue(): Promise<Business[]> {
+  const snapshot = await businessesCollection().get();
+  const businesses = snapshot.docs
+    .map(businessFromSnapshot)
+    .filter((business) =>
+      business.subscription?.status === "payment_review" ||
+      business.subscription?.status === "renewal_review" ||
+      business.verification.status === "review",
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return Promise.all(businesses.map(signBusinessPhotos));
 }
 
 export async function getBusinessById(id: string): Promise<Business | null> {
@@ -304,7 +445,10 @@ export async function getBusinessBySlug(slug: string): Promise<Business | null> 
   const snapshot = typeof businessId === "string"
     ? await businessesCollection().doc(businessId).get()
     : (await businessesCollection().where("slug", "==", slug).limit(1).get()).docs[0];
-  return snapshot?.exists ? businessFromSnapshot(snapshot) : null;
+  if (!snapshot?.exists) return null;
+  const business = businessFromSnapshot(snapshot);
+  if (!isPubliclyVisibleBusiness(business)) return null;
+  return signBusinessPhotos(business);
 }
 
 export async function getLeads(): Promise<Lead[]> {
@@ -356,6 +500,7 @@ export async function createLead(input: {
 }
 
 export async function createBusiness(input: {
+  id: string;
   ownerId?: string;
   name: string;
   category: string;
@@ -365,6 +510,9 @@ export async function createBusiness(input: {
   phone: string;
   email: string;
   country?: Country;
+  region?: string;
+  photos: string[];
+  subscription: BusinessSubscription;
   socials?: Partial<SocialLinks>;
   deviceLocation?: DeviceLocation;
 }) {
@@ -377,7 +525,7 @@ export async function createBusiness(input: {
         ...input.deviceLocation,
       }
     : await geocodeBusinessLocation(input.city, input.area, country);
-  const id = `biz-${randomUUID()}`;
+  const id = input.id;
   const business: Business = {
     id,
     slug,
@@ -386,9 +534,11 @@ export async function createBusiness(input: {
     city: input.city,
     area: input.area,
     country,
+    ...(input.region ? { region: input.region } : {}),
     rating: 0,
     reviews: 0,
-    image: "https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=1200&q=80",
+    image: input.photos[0],
+    photos: input.photos,
     description: input.description,
     services: [input.category],
     priceFrom: 0,
@@ -410,6 +560,8 @@ export async function createBusiness(input: {
       gpsProof: location,
       photoUploads: [],
     },
+    subscription: input.subscription,
+    publicationStatus: input.subscription.status === "trialing" ? "pending_verification" : "pending_payment",
   };
 
   const db = getFirestoreDb();
@@ -426,6 +578,175 @@ export async function createBusiness(input: {
     transaction.create(slugRef, { businessId: id });
   });
   return business;
+}
+
+export async function submitBusinessPaymentReference(input: {
+  businessId: string;
+  ownerId: string;
+  reference: string;
+}) {
+  const businessRef = businessesCollection().doc(input.businessId);
+  const submittedAt = new Date().toISOString();
+  return getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(businessRef);
+    if (!snapshot.exists) throw new BusinessNotFoundError();
+    const business = businessFromSnapshot(snapshot);
+    if (snapshot.data()?.ownerId !== input.ownerId) throw new NotBusinessOwnerError();
+    const subscription = business.subscription;
+    if (!subscription) throw new Error("This business does not have a visibility subscription.");
+    const initialPayment = subscription.status === "awaiting_payment";
+    const renewalPayment =
+      subscription.status === "trialing" ||
+      subscription.status === "active" ||
+      subscription.status === "expired";
+    if (!initialPayment && !renewalPayment) {
+      throw new Error("This subscription already has a payment awaiting review.");
+    }
+    const duplicateReference = await transaction.get(
+      businessPaymentsCollection().where("reference", "==", input.reference).limit(1),
+    );
+    if (!duplicateReference.empty) throw new Error("This transaction reference has already been submitted.");
+    const paymentRecordId = `payment-${business.id}-${randomUUID()}`;
+    const paymentRef = businessPaymentsCollection().doc(paymentRecordId);
+    const paymentPreviousStatus = renewalPayment
+      ? isSubscriptionEntitled(subscription)
+        ? subscription.status as "trialing" | "active"
+        : "expired"
+      : undefined;
+    const reviewStatus = initialPayment ? "payment_review" : "renewal_review";
+    transaction.update(businessRef, {
+      "subscription.status": reviewStatus,
+      "subscription.paymentReference": input.reference,
+      "subscription.paymentSubmittedAt": submittedAt,
+      "subscription.paymentRecordId": paymentRecordId,
+      ...(paymentPreviousStatus ? { "subscription.paymentPreviousStatus": paymentPreviousStatus } : {}),
+    });
+    transaction.create(paymentRef, {
+      businessId: business.id,
+      ownerId: input.ownerId,
+      reference: input.reference,
+      amountKsh: subscription.monthlyPriceKsh,
+      planId: subscription.planId,
+      status: "submitted",
+      submittedAt,
+    });
+    return reviewStatus;
+  });
+}
+
+export async function reviewBusiness(input: {
+  businessId: string;
+  adminId: string;
+  action: "confirm_payment" | "reject_payment" | "approve_verification" | "reject_verification";
+}) {
+  const businessRef = businessesCollection().doc(input.businessId);
+  const reviewRef = businessReviewsCollection().doc(`review-${randomUUID()}`);
+  const reviewedAt = new Date().toISOString();
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(businessRef);
+    if (!snapshot.exists) throw new BusinessNotFoundError();
+    const business = businessFromSnapshot(snapshot);
+    if (!business.subscription || business.publicationStatus === undefined) {
+      throw new Error("This legacy listing does not require subscription review.");
+    }
+
+    if (input.action === "confirm_payment") {
+      if (
+        business.subscription.status !== "payment_review" &&
+        business.subscription.status !== "renewal_review"
+      ) {
+        throw new Error("This business has no payment awaiting review.");
+      }
+      const paymentRef = businessPaymentsCollection().doc(
+        business.subscription.paymentRecordId ?? `payment-${business.id}`,
+      );
+      const paymentSnapshot = await transaction.get(paymentRef);
+      if (!paymentSnapshot.exists || paymentSnapshot.data()?.status !== "submitted") {
+        throw new Error("The submitted payment record is missing or already reviewed.");
+      }
+      const isRenewal = business.subscription.status === "renewal_review";
+      const previousExpiry = Date.parse(business.subscription.expiresAt);
+      const expirationBase = isRenewal && previousExpiry > Date.parse(reviewedAt)
+        ? new Date(previousExpiry)
+        : new Date(reviewedAt);
+      const expiresAt = addSubscriptionMonth(expirationBase);
+      transaction.update(businessRef, {
+        "subscription.status": "active",
+        ...(!isRenewal ? { "subscription.startedAt": reviewedAt } : {}),
+        "subscription.expiresAt": expiresAt.toISOString(),
+        "subscription.paymentConfirmedAt": reviewedAt,
+        publicationStatus: business.verification.status === "verified"
+          ? "published"
+          : isRenewal
+            ? business.publicationStatus
+            : "pending_verification",
+      });
+      transaction.update(paymentRef, { status: "confirmed", reviewedAt, reviewedBy: input.adminId });
+    } else if (input.action === "reject_payment") {
+      if (
+        business.subscription.status !== "payment_review" &&
+        business.subscription.status !== "renewal_review"
+      ) {
+        throw new Error("This business has no payment awaiting review.");
+      }
+      const paymentRef = businessPaymentsCollection().doc(
+        business.subscription.paymentRecordId ?? `payment-${business.id}`,
+      );
+      const paymentSnapshot = await transaction.get(paymentRef);
+      if (!paymentSnapshot.exists || paymentSnapshot.data()?.status !== "submitted") {
+        throw new Error("The submitted payment record is missing or already reviewed.");
+      }
+      const isRenewal = business.subscription.status === "renewal_review";
+      const previousStatus = business.subscription.paymentPreviousStatus;
+      const expiryIsFuture = Date.parse(business.subscription.expiresAt) > Date.parse(reviewedAt);
+      const restoredStatus = isRenewal && expiryIsFuture
+        ? previousStatus === "trialing" ? "trialing" : "active"
+        : isRenewal
+          ? "expired"
+          : "awaiting_payment";
+      transaction.update(businessRef, {
+        "subscription.status": restoredStatus,
+        "subscription.paymentReference": FieldValue.delete(),
+        "subscription.paymentSubmittedAt": FieldValue.delete(),
+        "subscription.paymentRecordId": FieldValue.delete(),
+        "subscription.paymentPreviousStatus": FieldValue.delete(),
+        ...(!isRenewal
+          ? { publicationStatus: "pending_payment" }
+          : restoredStatus === "expired"
+            ? { publicationStatus: "expired" }
+            : {}),
+      });
+      transaction.update(paymentRef, { status: "rejected", reviewedAt, reviewedBy: input.adminId });
+    } else if (input.action === "approve_verification") {
+      if (business.verification.status !== "review" && business.verification.status !== "pending") {
+        throw new Error("This business has no verification awaiting review.");
+      }
+      if (!isSubscriptionEntitled(business.subscription)) {
+        throw new Error("An active subscription or trial is required before publishing this listing.");
+      }
+      transaction.update(businessRef, {
+        verified: true,
+        badge: "Verified",
+        "verification.status": "verified",
+        publicationStatus: "published",
+      });
+    } else {
+      if (business.verification.status !== "review" && business.verification.status !== "pending") {
+        throw new Error("This business has no verification awaiting review.");
+      }
+      transaction.update(businessRef, {
+        verified: false,
+        "verification.status": "rejected",
+        publicationStatus: "rejected",
+      });
+    }
+    transaction.create(reviewRef, {
+      businessId: business.id,
+      adminId: input.adminId,
+      action: input.action,
+      reviewedAt,
+    });
+  });
 }
 
 export async function getServicesForBusiness(businessId: string): Promise<Service[]> {
@@ -592,7 +913,7 @@ export async function getDashboardData(ownerId?: string) {
     businessCount: businesses.length,
     leadCount: leads.length,
     totalRevenue: businesses.reduce((sum, business) => sum + business.priceFrom, 0),
-    businesses: businesses.slice(0, 5),
+    businesses,
     leads: leads.slice(0, 4),
   };
 }

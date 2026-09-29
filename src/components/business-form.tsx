@@ -1,13 +1,55 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   isDeviceLocation,
   MAX_BUSINESS_LOCATION_ACCURACY_METERS,
   type DeviceLocation,
 } from "@/lib/location";
+import {
+  REGIONS_BY_COUNTRY,
+  SUBSCRIPTION_PLANS,
+  type SubscriptionPlanId,
+} from "@/lib/subscription";
 
-export function BusinessForm() {
+type PaymentInstructions = {
+  paybill: string;
+  till: string;
+};
+
+async function prepareBusinessPhoto(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
+    throw new Error("Choose an image smaller than 10 MB.");
+  }
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("This browser could not prepare the selected photo.");
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (result) => result ? resolve(result) : reject(new Error("This browser could not prepare the selected photo.")),
+      "image/jpeg",
+      0.88,
+    );
+  });
+  const filename = file.name.replace(/\.[^.]+$/, "") || "business-photo";
+  return new File([blob], `${filename}.jpg`, { type: "image/jpeg" });
+}
+
+function regionsForCountry(country: string): readonly string[] {
+  if (country === "Kenya") return REGIONS_BY_COUNTRY.Kenya;
+  if (country === "Uganda") return REGIONS_BY_COUNTRY.Uganda;
+  if (country === "Tanzania") return REGIONS_BY_COUNTRY.Tanzania;
+  return [];
+}
+
+export function BusinessForm({ paymentInstructions }: { paymentInstructions: PaymentInstructions }) {
   const [form, setForm] = useState({
     name: "",
     category: "Cleaning",
@@ -17,13 +59,22 @@ export function BusinessForm() {
     description: "",
     phone: "",
     email: "",
+    region: "",
   });
+  const [planId, setPlanId] = useState<SubscriptionPlanId>("area");
+  const [trial, setTrial] = useState(true);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoStatus, setPhotoStatus] = useState("");
   const [deviceLocation, setDeviceLocation] = useState<DeviceLocation | null>(null);
   const [locationStatus, setLocationStatus] = useState<{
     type: "loading" | "success" | "error";
     message: string;
   }>({ type: "loading", message: "Requesting your precise location…" });
   const [submitting, setSubmitting] = useState(false);
+  const [createdBusinessId, setCreatedBusinessId] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentReferenceSubmitted, setPaymentReferenceSubmitted] = useState(false);
   const [status, setStatus] = useState<{ type: "idle" | "success" | "error"; message: string }>({
     type: "idle",
     message: "",
@@ -92,6 +143,29 @@ export function BusinessForm() {
     };
   }, [captureLocation]);
 
+  async function selectPhotos(files: FileList | null) {
+    const selected = files ? Array.from(files) : [];
+    if (selected.length < 2) {
+      setPhotos([]);
+      setPhotoStatus("Upload at least two photos to continue.");
+      return;
+    }
+    if (selected.length > 5) {
+      setPhotos([]);
+      setPhotoStatus("Upload no more than five photos.");
+      return;
+    }
+    setPhotoStatus("Preparing photos and removing embedded location metadata…");
+    try {
+      const prepared = await Promise.all(selected.map(prepareBusinessPhoto));
+      setPhotos(prepared);
+      setPhotoStatus(`${prepared.length} photos ready. Private GPS metadata has been removed.`);
+    } catch (error) {
+      setPhotos([]);
+      setPhotoStatus(error instanceof Error ? error.message : "Unable to prepare the selected photos.");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!deviceLocation) {
@@ -102,11 +176,21 @@ export function BusinessForm() {
     setStatus({ type: "idle", message: "Submitting..." });
 
     try {
-      const response = await fetch("/api/businesses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, location: deviceLocation }),
-      });
+      const body = new FormData();
+      body.set("name", form.name);
+      body.set("category", form.category);
+      body.set("city", form.city);
+      body.set("area", form.area);
+      body.set("country", form.country);
+      body.set("region", form.region);
+      body.set("description", form.description);
+      body.set("phone", form.phone);
+      body.set("email", form.email);
+      body.set("planId", planId);
+      body.set("trial", String(trial));
+      body.set("location", JSON.stringify(deviceLocation));
+      photos.forEach((photo) => body.append("photos", photo));
+      const response = await fetch("/api/businesses", { method: "POST", body });
 
       const result: unknown = await response.json();
       const errorMessage =
@@ -118,17 +202,15 @@ export function BusinessForm() {
         setStatus({ type: "error", message: errorMessage });
         return;
       }
-
-      setStatus({ type: "success", message: "Business added successfully with its captured device coordinates." });
-      setForm({
-        name: "",
-        category: "Cleaning",
-        city: "",
-        area: "",
-        country: "",
-        description: "",
-        phone: "",
-        email: "",
+      if (typeof result !== "object" || result === null || !("id" in result) || typeof result.id !== "string") {
+        throw new Error("The listing was created but the server returned an invalid response.");
+      }
+      setCreatedBusinessId(result.id);
+      setStatus({
+        type: "success",
+        message: trial
+          ? "Your 7-day trial listing is created. Submit location verification to publish it."
+          : "Your listing is created and will publish after payment and location approval.",
       });
     } catch (error) {
       setStatus({
@@ -140,6 +222,30 @@ export function BusinessForm() {
     }
   }
 
+  async function submitPaymentReference(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!createdBusinessId) return;
+    setPaymentSubmitting(true);
+    try {
+      const response = await fetch(`/api/businesses/${encodeURIComponent(createdBusinessId)}/payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference: paymentReference }),
+      });
+      const payload: unknown = await response.json();
+      const message = typeof payload === "object" && payload !== null && "error" in payload &&
+        typeof payload.error === "string" ? payload.error : "Unable to submit payment reference.";
+      if (!response.ok) throw new Error(message);
+      setPaymentReferenceSubmitted(true);
+      setStatus({ type: "success", message: "Payment reference submitted. Your subscription will activate after an administrator confirms it." });
+      setPaymentReference("");
+    } catch (error) {
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Unable to submit payment reference." });
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)] md:p-6">
       <div className="mb-6">
@@ -147,6 +253,7 @@ export function BusinessForm() {
         <h2 className="mt-2 text-xl font-semibold text-slate-900">Add a local business</h2>
       </div>
 
+      <fieldset disabled={Boolean(createdBusinessId)} className="contents">
       <section className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4" aria-label="Business GPS location">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -232,7 +339,7 @@ export function BusinessForm() {
           Country
           <select
             value={form.country}
-            onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))}
+            onChange={(event) => setForm((current) => ({ ...current, country: event.target.value, region: "" }))}
             className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none"
             required
           >
@@ -242,6 +349,23 @@ export function BusinessForm() {
             <option value="Tanzania">Tanzania</option>
           </select>
         </label>
+
+        {planId === "region" && (
+          <label className="text-sm font-medium text-slate-700">
+            Service region
+            <select
+              value={form.region}
+              onChange={(event) => setForm((current) => ({ ...current, region: event.target.value }))}
+              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none"
+              required
+            >
+              <option value="">Select a region</option>
+              {regionsForCountry(form.country).map((region) => (
+                <option key={region} value={region}>{region}</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="text-sm font-medium text-slate-700">
           Area
@@ -287,7 +411,40 @@ export function BusinessForm() {
             required
           />
         </label>
+
+        <label className="text-sm font-medium text-slate-700 md:col-span-2">
+          Business photos (2–5)
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            required
+            onChange={(event) => void selectPhotos(event.target.files)}
+            className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"
+          />
+          <span className="mt-1 block text-xs font-normal text-slate-500">Photos are resized to protect customer privacy; embedded GPS and camera metadata are removed before storage.</span>
+          {photoStatus && <span className="mt-1 block text-xs font-normal text-emerald-800" aria-live="polite">{photoStatus}</span>}
+        </label>
+
+        <div className="md:col-span-2">
+          <h3 className="text-sm font-semibold text-slate-800">Choose your visibility plan</h3>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            {(Object.values(SUBSCRIPTION_PLANS)).map((plan) => (
+              <label key={plan.id} className={`cursor-pointer rounded-xl border p-3 ${planId === plan.id ? "border-emerald-800 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                <input type="radio" name="visibilityPlan" value={plan.id} checked={planId === plan.id} onChange={() => setPlanId(plan.id)} className="sr-only" />
+                <span className="block text-sm font-semibold text-slate-900">{plan.label}</span>
+                <span className="mt-1 block text-sm text-slate-600">KES {plan.monthlyPriceKsh.toLocaleString()} / month</span>
+                <span className="mt-1 block text-xs text-slate-500">Top 100 eligible listings in this scope</span>
+              </label>
+            ))}
+          </div>
+          <label className="mt-3 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <input type="checkbox" checked={trial} onChange={(event) => setTrial(event.target.checked)} className="mt-0.5 accent-emerald-800" />
+            <span><strong>Start with a 7-day free trial</strong><span className="block text-xs text-slate-500">Try the selected visibility scope for one week. After the trial, visibility pauses until payment is confirmed.</span></span>
+          </label>
+        </div>
       </div>
+      </fieldset>
 
       {status.message && (
         <div
@@ -303,13 +460,58 @@ export function BusinessForm() {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={submitting || !deviceLocation}
-        className="mt-6 w-full rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {submitting ? "Submitting…" : "Submit business"}
-      </button>
+      {createdBusinessId ? (
+        <div className="mt-5 space-y-4">
+          {trial && (
+            <Link href="/dashboard/verify-location" className="block w-full rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white">
+              Continue to location verification
+            </Link>
+          )}
+          {!trial && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Pay for your first month</h3>
+              {paymentInstructions.paybill || paymentInstructions.till ? (
+                <>
+                  <p className="mt-2 text-sm text-slate-700">
+                    Send KES {SUBSCRIPTION_PLANS[planId].monthlyPriceKsh.toLocaleString()} by M-Pesa{" "}
+                    {paymentInstructions.paybill
+                      ? <>to Paybill <strong>{paymentInstructions.paybill}</strong>, using the business name as the account number</>
+                      : <>to Till <strong>{paymentInstructions.till}</strong></>}.
+                    We will verify the transaction before activating the subscription.
+                  </p>
+                  <form onSubmit={submitPaymentReference} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      value={paymentReference}
+                      onChange={(event) => setPaymentReference(event.target.value)}
+                      placeholder="M-Pesa transaction code"
+                      autoComplete="off"
+                      minLength={6}
+                      maxLength={32}
+                      required
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"
+                    />
+                    <button type="submit" disabled={paymentSubmitting} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                      {paymentSubmitting ? "Submitting…" : "Submit reference"}
+                    </button>
+                  </form>
+                  {paymentReferenceSubmitted && <Link href="/dashboard/verify-location" className="mt-3 inline-block text-sm font-semibold text-emerald-800 underline">Continue to location verification</Link>}
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-amber-900">Payment details are not configured yet. Do not send money. You can use the 7-day trial or contact JiraniBiz support for payment instructions.</p>
+              )}
+              <Link href="/dashboard/verify-location" className="mt-3 inline-block text-sm font-semibold text-emerald-800 underline">Continue to location verification</Link>
+            </div>
+          )}
+        </div>
+      ) : (
+        <button
+          type="submit"
+          disabled={submitting || !deviceLocation || photos.length < 2 || Boolean(photoStatus && !photos.length)}
+          className="mt-6 w-full rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? "Submitting…" : trial ? "Create listing & start free trial" : "Create listing & subscribe"}
+        </button>
+      )}
     </form>
   );
 }

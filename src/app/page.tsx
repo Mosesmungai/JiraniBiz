@@ -2,13 +2,26 @@ import Image from "next/image";
 import Link from "next/link";
 import { categories } from "@/lib/data";
 import { getBusinesses } from "@/lib/store";
+import { SUBSCRIPTION_PLANS } from "@/lib/subscription";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const businesses = await getBusinesses();
-  const featuredBusinesses = businesses.slice(0, 3);
-  const featuredBusiness = businesses[0];
+  const recommendedBusinesses = [...businesses].sort((left, right) => {
+    const leftRank = left.promotionEligible && left.subscription
+      ? SUBSCRIPTION_PLANS[left.subscription.planId].rank
+      : 0;
+    const rightRank = right.promotionEligible && right.subscription
+      ? SUBSCRIPTION_PLANS[right.subscription.planId].rank
+      : 0;
+    return rightRank - leftRank ||
+      right.rating - left.rating ||
+      right.reviews - left.reviews ||
+      left.name.localeCompare(right.name);
+  });
+  const featuredBusinesses = recommendedBusinesses.slice(0, 3);
+  const featuredBusiness = recommendedBusinesses[0];
   const averageRating = businesses.length
     ? (businesses.reduce((sum, business) => sum + business.rating, 0) / businesses.length).toFixed(1)
     : "0.0";
@@ -115,7 +128,14 @@ export default async function Home() {
                           <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Featured</div>
                           <div className="mt-2 text-xl font-semibold text-slate-900">{featuredBusiness.name}</div>
                         </div>
-                        {featuredBusiness.verified && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Verified</span>}
+                        <div className="flex flex-wrap gap-2">
+                          {featuredBusiness.promotionEligible && featuredBusiness.subscription && (
+                            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950">
+                              Promoted · {SUBSCRIPTION_PLANS[featuredBusiness.subscription.planId].label}
+                            </span>
+                          )}
+                          {featuredBusiness.verified && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Verified</span>}
+                        </div>
                       </div>
                       <div className="overflow-hidden rounded-2xl">
                         <Image
@@ -204,7 +224,14 @@ export default async function Home() {
                 <div className="p-2 pt-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xl font-semibold text-slate-900">{business.name}</div>
-                    {business.verified && <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Verified</span>}
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {business.promotionEligible && business.subscription && (
+                        <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-950">
+                          Promoted · {SUBSCRIPTION_PLANS[business.subscription.planId].label}
+                        </span>
+                      )}
+                      {business.verified && <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Verified</span>}
+                    </div>
                   </div>
                   <div className="mt-2 text-sm text-slate-500">{business.category} • {business.area}, {business.city}</div>
                   <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
@@ -272,9 +299,9 @@ export default async function Home() {
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             {[
-              { name: "Starter", price: "KES 1,500", text: "Perfect for new local businesses", features: ["Business profile", "Up to 5 services", "Lead inbox", "Basic analytics"] },
-              { name: "Pro", price: "KES 4,500", text: "Best for growing service providers", features: ["Everything in Starter", "Priority placement", "Booking management", "WhatsApp lead routing"], highlight: true },
-              { name: "Featured", price: "KES 9,500", text: "For businesses that want stronger visibility", features: ["Everything in Pro", "Featured position", "Boosted exposure", "Dedicated support"] },
+              { name: "Area reach", price: "KES 500", text: "Be recommended in your local service area.", features: ["Top 100 eligible businesses in your area", "Local customer recommendations", "Business photo gallery", "Location verification"] },
+              { name: "Regional reach", price: "KES 1,000", text: "Reach customers across your selected region.", features: ["Top 100 eligible businesses in your region", "Regional customer recommendations", "Business photo gallery", "Location verification"], highlight: true },
+              { name: "Country-wide reach", price: "KES 2,000", text: "Promote your business across your country.", features: ["Top 100 eligible businesses in your country", "Country-wide recommendations", "Business photo gallery", "Location verification"] },
             ].map((plan) => (
               <div key={plan.name} className={`rounded-2xl border p-5 ${plan.highlight ? "border-[#173b37] bg-[#173b37] text-white shadow-sm" : "border-slate-200 bg-white text-slate-900"}`}>
                 <div className="text-sm uppercase tracking-[0.2em] opacity-70">{plan.name}</div>
@@ -288,12 +315,13 @@ export default async function Home() {
                     </li>
                   ))}
                 </ul>
-                <button className={`mt-8 w-full rounded-full px-4 py-3 text-sm font-semibold ${plan.highlight ? "bg-white text-slate-900" : "bg-slate-900 text-white"}`}>
-                  Choose plan
-                </button>
+                <Link href="/dashboard#add-business" className={`mt-8 block w-full rounded-full px-4 py-3 text-center text-sm font-semibold ${plan.highlight ? "bg-white text-slate-900" : "bg-slate-900 text-white"}`}>
+                  Start a 7-day trial
+                </Link>
               </div>
             ))}
           </div>
+          <p className="mt-4 text-center text-xs leading-5 text-slate-500">Each scope has up to 100 promoted placements. Placement depends on availability and customer relevance; payment is for a visibility subscription and verification review, not a guaranteed rank or verification outcome.</p>
         </section>
 
         <section className="border-t border-slate-200 bg-white/80">
