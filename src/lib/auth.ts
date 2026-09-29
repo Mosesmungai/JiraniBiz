@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { getDb } from "@/lib/db";
+import { cookies } from "next/headers";
+import { sessionsCollection, usersCollection } from "@/lib/firestore";
 
 export type UserRole = "customer" | "business_owner" | "admin";
 
@@ -12,7 +13,7 @@ export type AuthUser = {
 };
 
 const SESSION_DAYS = 30;
-const SESSION_COOKIE = "jiranibiz_session";
+export const SESSION_COOKIE = "jiranibiz_session";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -33,7 +34,7 @@ export function verifyPassword(password: string, storedHash: string) {
   return expected.length === actual.length && timingSafeEqual(actual, expected);
 }
 
-export function createUser(input: {
+export async function createUser(input: {
   name: string;
   email: string;
   phone?: string;
@@ -43,74 +44,70 @@ export function createUser(input: {
   const id = `user-${randomBytes(12).toString("hex")}`;
   const email = normalizeEmail(input.email);
   const role = input.role ?? "customer";
+  const name = input.name.trim();
 
-  if (!email || !input.name.trim()) throw new Error("Name and email are required");
+  if (!email || !name) throw new Error("Name and email are required");
 
-  getDb().prepare(`
-    INSERT INTO users (id, name, email, phone, role, password_hash)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, input.name.trim(), email, input.phone?.trim() || null, role, hashPassword(input.password));
+  const existing = await usersCollection().where("email", "==", email).limit(1).get();
+  if (!existing.empty) throw new Error("An account with this email already exists");
 
-  return { id, name: input.name.trim(), email, phone: input.phone?.trim() || null, role } as AuthUser;
+  const user: AuthUser = { id, name, email, phone: input.phone?.trim() || null, role };
+  await usersCollection().doc(id).set({ ...user, passwordHash: hashPassword(input.password), createdAt: new Date().toISOString() });
+  return user;
 }
 
-export function authenticateUser(emailInput: string, password: string): AuthUser | null {
+export async function authenticateUser(emailInput: string, password: string): Promise<AuthUser | null> {
   const email = normalizeEmail(emailInput);
-  const user = getDb().prepare(`
-    SELECT id, name, email, phone, role, password_hash
-    FROM users WHERE email = ?
-  `).get(email) as (AuthUser & { password_hash: string | null }) | undefined;
+  const snapshot = await usersCollection().where("email", "==", email).limit(1).get();
+  if (snapshot.empty) return null;
 
-  if (!user?.password_hash || !verifyPassword(password, user.password_hash)) return null;
+  const data = snapshot.docs[0].data() as { id: string; name: string; email: string; phone?: string | null; role: UserRole; passwordHash?: string };
+  if (!data.passwordHash || !verifyPassword(password, data.passwordHash)) return null;
 
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    phone: user.phone,
-    role: user.role,
-  };
+  return { id: data.id, name: data.name, email: data.email, phone: data.phone ?? null, role: data.role };
 }
 
 function hashToken(token: string) {
-  return createHmac("sha256", process.env.SESSION_SECRET ?? "jiranibiz-development-secret").update(token).digest("hex");
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("SESSION_SECRET is required");
+  return createHmac("sha256", secret).update(token).digest("hex");
 }
 
-export function createSession(userId: string) {
+export async function createSession(userId: string) {
   const token = randomBytes(32).toString("hex");
   const id = `session-${randomBytes(12).toString("hex")}`;
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  getDb().prepare(`
-    INSERT INTO sessions (id, user_id, token_hash, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(id, userId, hashToken(token), expiresAt);
-
+  await sessionsCollection().doc(id).set({ id, userId, tokenHash: hashToken(token), expiresAt, createdAt: new Date().toISOString() });
   return { token, expiresAt };
 }
 
-export function getUserFromSession(token: string | undefined): AuthUser | null {
+export async function getUserFromSession(token: string | undefined): Promise<AuthUser | null> {
   if (!token) return null;
 
-  const row = getDb().prepare(`
-    SELECT u.id, u.name, u.email, u.phone, u.role, s.expires_at
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
-  `).get(hashToken(token)) as (AuthUser & { expires_at: string }) | undefined;
+  const snapshot = await sessionsCollection().where("tokenHash", "==", hashToken(token)).limit(1).get();
+  if (snapshot.empty) return null;
 
-  if (!row) return null;
-  if (new Date(row.expires_at).getTime() <= Date.now()) {
-    getDb().prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+  const sessionDoc = snapshot.docs[0];
+  const session = sessionDoc.data() as { userId: string; expiresAt: string };
+  if (new Date(session.expiresAt).getTime() <= Date.now()) {
+    await sessionDoc.ref.delete();
     return null;
   }
 
-  return { id: row.id, name: row.name, email: row.email, phone: row.phone, role: row.role };
+  const userDoc = await usersCollection().doc(session.userId).get();
+  if (!userDoc.exists) return null;
+  const user = userDoc.data() as AuthUser;
+  return { id: user.id, name: user.name, email: user.email, phone: user.phone ?? null, role: user.role };
 }
 
-export function destroySession(token: string | undefined) {
+export async function destroySession(token: string | undefined) {
   if (!token) return;
-  getDb().prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+  const snapshot = await sessionsCollection().where("tokenHash", "==", hashToken(token)).limit(1).get();
+  if (!snapshot.empty) await snapshot.docs[0].ref.delete();
 }
 
-export { SESSION_COOKIE };
+export async function getCurrentUser() {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return getUserFromSession(token);
+}
