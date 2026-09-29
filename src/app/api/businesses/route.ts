@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getUserFromSession, SESSION_COOKIE } from "@/lib/auth";
 import { createBusiness, getBusinesses } from "@/lib/store";
 
 export async function GET() {
@@ -8,6 +10,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const cookieStore = await cookies();
+    const user = getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
+
+    if (!user || (user.role !== "business_owner" && user.role !== "admin")) {
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+
     const body = await request.json();
     const { name, category, city, area, country, description, phone, email } = body;
 
@@ -16,6 +25,7 @@ export async function POST(request: Request) {
     }
 
     const created = await createBusiness({
+      ownerId: user.role === "business_owner" ? user.id : undefined,
       name,
       category,
       city,
@@ -32,4 +42,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to create business." }, { status: 500 });
   }
 }
-
