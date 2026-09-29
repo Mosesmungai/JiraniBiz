@@ -32,7 +32,7 @@ export default function DiscoverPage() {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [radiusKm, setRadiusKm] = useState(30);
-  const [userLocation, setUserLocation] = useState({ ...userLocationDefaults, accuracy: undefined as number | undefined });
+  const [userLocation, setUserLocation] = useState({ ...userLocationDefaults, accuracy: undefined as number | undefined });\n  const hasPreciseLocation = userLocation.accuracy !== undefined;
   const [businesses, setBusinesses] = useState<Business[]>(defaultBusinesses);
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function DiscoverPage() {
         const distanceB = distanceBetween(userLocation.latitude, userLocation.longitude, b.location.latitude, b.location.longitude);
         return distanceA - distanceB;
       });
-  }, [businesses, query, radiusKm, selectedCategory, userLocation]);
+  }, [businesses, query, radiusKm, selectedCategory, userLocation, hasPreciseLocation]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
