@@ -59,6 +59,11 @@ export function BusinessForm({ paymentInstructions }: { paymentInstructions: Pay
     description: "",
     phone: "",
     email: "",
+    whatsappNumber: "",
+    instagram: "",
+    facebook: "",
+    x: "",
+    website: "",
     region: "",
   });
   const [planId, setPlanId] = useState<SubscriptionPlanId>("area");
@@ -186,6 +191,11 @@ export function BusinessForm({ paymentInstructions }: { paymentInstructions: Pay
       body.set("description", form.description);
       body.set("phone", form.phone);
       body.set("email", form.email);
+      body.set("whatsappNumber", form.whatsappNumber);
+      body.set("instagram", form.instagram);
+      body.set("facebook", form.facebook);
+      body.set("x", form.x);
+      body.set("website", form.website);
       body.set("planId", planId);
       body.set("trial", String(trial));
       body.set("location", JSON.stringify(deviceLocation));
@@ -411,6 +421,48 @@ export function BusinessForm({ paymentInstructions }: { paymentInstructions: Pay
             required
           />
         </label>
+
+        <details className="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800">
+            Add WhatsApp and social links <span className="font-normal text-slate-500">(optional)</span>
+          </summary>
+          <div className="grid gap-3 border-t border-slate-200 p-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">
+              WhatsApp number
+              <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={form.whatsappNumber}
+                onChange={(event) => setForm((current) => ({ ...current, whatsappNumber: event.target.value }))}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-normal outline-none placeholder:text-slate-400"
+                placeholder="+254 700 123 456"
+              />
+              <span className="mt-1 block text-xs font-normal text-slate-500">Include your country code; we’ll create your WhatsApp chat link.</span>
+            </label>
+            {([
+              ["instagram", "Instagram profile", "https://instagram.com/yourbusiness"],
+              ["facebook", "Facebook page", "https://facebook.com/yourbusiness"],
+              ["x", "X profile", "https://x.com/yourbusiness"],
+              ["website", "Website", "https://yourbusiness.com"],
+            ] as const).map(([key, label, placeholder]) => (
+              <label key={key} className="text-sm font-medium text-slate-700">
+                {label}
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={form[key]}
+                  onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-normal outline-none placeholder:text-slate-400"
+                  placeholder={placeholder}
+                />
+              </label>
+            ))}
+            <p className="text-xs leading-5 text-slate-500 sm:col-span-2">
+              Use full HTTPS profile links. Profile photos are not fetched; customers can open your social profiles directly.
+            </p>
+          </div>
+        </details>
 
         <label className="text-sm font-medium text-slate-700 md:col-span-2">
           Business photos (2–5)

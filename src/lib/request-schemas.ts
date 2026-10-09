@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { normalizeWhatsAppNumber } from "@/lib/business-contact";
 
 const email = z.string().trim().email().max(254);
 const password = z.string().min(8).max(256);
 const identifier = z.string().trim().min(1).max(160).regex(/^[A-Za-z0-9_-]+$/);
+const socialUrl = z.string().trim().max(2048).refine((value) => {
+  if (!value) return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}, "Enter a valid HTTPS profile URL, or leave this field blank.");
+const whatsAppNumber = z.string().trim().max(32).refine(
+  (value) => !value || normalizeWhatsAppNumber(value) !== null,
+  "Enter a valid international phone number, for example +254 700 123 456.",
+).transform((value) => normalizeWhatsAppNumber(value) ?? "");
 
 export const loginBodySchema = z.object({
   email,
@@ -99,9 +112,22 @@ export const businessCreateFormSchema = z.object({
   description: z.string().trim().min(1).max(4000),
   phone: z.string().trim().min(1).max(32),
   email: z.string().trim().email().max(254),
+  whatsappNumber: whatsAppNumber.optional().default(""),
+  instagram: socialUrl.optional().default(""),
+  facebook: socialUrl.optional().default(""),
+  x: socialUrl.optional().default(""),
+  website: socialUrl.optional().default(""),
   planId: z.enum(["area", "region", "country"]),
   trial: z.boolean(),
   location: deviceLocationSchema,
+}).strict();
+
+export const businessContactUpdateSchema = z.object({
+  whatsappNumber: whatsAppNumber,
+  instagram: socialUrl,
+  facebook: socialUrl,
+  x: socialUrl,
+  website: socialUrl,
 }).strict();
 
 export const verificationFormSchema = z.object({

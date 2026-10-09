@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { FieldValue, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { FieldValue, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot, type Transaction } from "firebase-admin/firestore";
 import type { AuthUser } from "@/lib/auth";
 import { getBookingAccessRole } from "@/lib/booking-access";
 import {
@@ -27,6 +27,8 @@ import { getStorage } from "firebase-admin/storage";
 import {
   bookingsCollection,
   businessPaymentsCollection,
+  businessMetricVisitorsCollection,
+  businessMetricsCollection,
   businessReviewsCollection,
   businessSlugsCollection,
   businessesCollection,
@@ -427,6 +429,111 @@ export async function getBusinessById(id: string): Promise<Business | null> {
   return snapshot.exists ? businessFromSnapshot(snapshot) : null;
 }
 
+async function updateBusinessDailyMetrics(
+  transaction: Transaction,
+  businessId: string,
+  day: string,
+  changes: { views?: number; uniqueVisitors?: number; bookingRequests?: number; leadEnquiries?: number; serviceId?: string },
+) {
+  const metricRef = businessMetricsCollection(businessId).doc(day);
+  const snapshot = await transaction.get(metricRef);
+  const data = snapshot.data();
+  const count = (field: string) => {
+    const value = data?.[field];
+    if (value === undefined) return 0;
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`Persisted business analytics counter ${field} is malformed.`);
+    }
+    return value;
+  };
+  const existingServices = data?.serviceRequests === undefined
+    ? {}
+    : record(data.serviceRequests, "business service metrics");
+  const serviceRequests: Record<string, number> = {};
+  for (const [serviceId, value] of Object.entries(existingServices)) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`Persisted business analytics counter serviceRequests.${serviceId} is malformed.`);
+    }
+    serviceRequests[serviceId] = value;
+  }
+  if (changes.bookingRequests || changes.leadEnquiries) {
+    const serviceId = changes.serviceId ?? "direct_enquiry";
+    serviceRequests[serviceId] = (serviceRequests[serviceId] ?? 0) + 1;
+  }
+
+  transaction.set(metricRef, {
+    day,
+    views: count("views") + (changes.views ?? 0),
+    uniqueVisitors: count("uniqueVisitors") + (changes.uniqueVisitors ?? 0),
+    bookingRequests: count("bookingRequests") + (changes.bookingRequests ?? 0),
+    leadEnquiries: count("leadEnquiries") + (changes.leadEnquiries ?? 0),
+    serviceRequests,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function recordBusinessProfileView(
+  businessId: string,
+  input: { userId?: string; clientAddress: string; userAgent: string },
+): Promise<void> {
+  const businessRef = businessesCollection().doc(businessId);
+  const snapshot = await businessRef.get();
+  if (!snapshot.exists) throw new BusinessNotFoundError();
+  const business = businessFromSnapshot(snapshot);
+  if (!isPubliclyVisibleBusiness(business) || snapshot.data()?.ownerId === input.userId) return;
+
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("SESSION_SECRET is required for business analytics.");
+  const day = new Date().toISOString().slice(0, 10);
+  const visitorId = createHmac("sha256", secret)
+    .update(`${businessId}:${day}:${input.clientAddress}:${input.userAgent}`)
+    .digest("hex");
+  const visitorRef = businessMetricVisitorsCollection().doc(visitorId);
+  const now = Date.now();
+
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const visitor = await transaction.get(visitorRef);
+    await updateBusinessDailyMetrics(transaction, businessId, day, {
+      views: 1,
+      uniqueVisitors: visitor.exists ? 0 : 1,
+    });
+    if (!visitor.exists) {
+      transaction.create(visitorRef, {
+        businessId,
+        day,
+        expiresAt: new Date(now + 90 * 24 * 60 * 60 * 1000),
+      });
+    }
+  });
+}
+
+export async function updateBusinessContact(input: {
+  businessId: string;
+  ownerId: string;
+  whatsappNumber: string;
+  instagram: string;
+  facebook: string;
+  x: string;
+  website: string;
+}) {
+  const businessRef = businessesCollection().doc(input.businessId);
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(businessRef);
+    if (!snapshot.exists) throw new BusinessNotFoundError();
+    if (snapshot.data()?.ownerId !== input.ownerId) throw new NotBusinessOwnerError();
+
+    transaction.update(businessRef, {
+      "socials.whatsapp": input.whatsappNumber
+        ? `https://wa.me/${input.whatsappNumber.replace(/^\+/, "")}`
+        : "",
+      "socials.instagram": input.instagram,
+      "socials.facebook": input.facebook,
+      "socials.x": input.x,
+      "socials.website": input.website,
+    });
+  });
+}
+
 export async function getBusinessBySlug(slug: string): Promise<Business | null> {
   const slugSnapshot = await businessSlugsCollection().doc(slug).get();
   const businessId = slugSnapshot.data()?.businessId;
@@ -475,14 +582,22 @@ export async function createLead(input: {
     status: "New",
     createdAt: new Date().toISOString(),
   };
-  await leadsCollection().doc(lead.id).create({
-    businessId: lead.businessId,
-    ...(input.customerId ? { customerId: input.customerId } : {}),
-    name: lead.name,
-    phone: lead.phone,
-    message: lead.message,
-    status: lead.status,
-    createdAt: lead.createdAt,
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    await updateBusinessDailyMetrics(
+      transaction,
+      lead.businessId,
+      lead.createdAt.slice(0, 10),
+      { leadEnquiries: 1 },
+    );
+    transaction.create(leadsCollection().doc(lead.id), {
+      businessId: lead.businessId,
+      ...(input.customerId ? { customerId: input.customerId } : {}),
+      name: lead.name,
+      phone: lead.phone,
+      message: lead.message,
+      status: lead.status,
+      createdAt: lead.createdAt,
+    });
   });
   return lead;
 }
@@ -801,6 +916,12 @@ export async function createBooking(input: {
         throw new ServiceNotFoundError();
       }
     }
+    await updateBusinessDailyMetrics(
+      transaction,
+      booking.businessId,
+      booking.createdAt.slice(0, 10),
+      { bookingRequests: 1, serviceId: booking.serviceId ?? undefined },
+    );
     transaction.create(bookingRef, {
       businessId: booking.businessId,
       customerId: booking.customerId,
@@ -972,17 +1093,115 @@ export async function createReview(input: {
   return review;
 }
 
+export type BusinessAnalytics = {
+  businessId: string;
+  businessName: string;
+  views: number;
+  uniqueVisitors: number;
+  bookingRequests: number;
+  leadEnquiries: number;
+  daily: Array<{ day: string; views: number; bookingRequests: number }>;
+  requestedServices: Array<{ name: string; requests: number }>;
+};
+
+async function getBusinessAnalytics(business: Business): Promise<BusinessAnalytics> {
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - 29);
+  const startDay = start.toISOString().slice(0, 10);
+  const [metricsSnapshot, services] = await Promise.all([
+    businessMetricsCollection(business.id).where("day", ">=", startDay).get(),
+    servicesCollection().where("businessId", "==", business.id).get(),
+  ]);
+  const serviceNames = new Map(services.docs.map((snapshot) => [
+    snapshot.id,
+    requiredString(snapshot.data().name, "service name"),
+  ]));
+  const dailyByDay = new Map<string, { views: number; uniqueVisitors: number; bookingRequests: number; leadEnquiries: number; serviceRequests: Record<string, number> }>();
+
+  for (const snapshot of metricsSnapshot.docs) {
+    const data = snapshot.data();
+    const day = requiredString(data.day, "business metrics day");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`Invalid business metrics document ${snapshot.id}: day is invalid.`);
+    const count = (value: unknown, field: string) => {
+      if (value === undefined) return 0;
+      if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error(`Invalid business metrics document ${snapshot.id}: ${field} is invalid.`);
+      }
+      return value;
+    };
+    const requests = data.serviceRequests === undefined ? {} : record(data.serviceRequests, "business service metrics");
+    const serviceRequests: Record<string, number> = {};
+    for (const [serviceId, value] of Object.entries(requests)) {
+      serviceRequests[serviceId] = count(value, `serviceRequests.${serviceId}`);
+    }
+    dailyByDay.set(day, {
+      views: count(data.views, "views"),
+      uniqueVisitors: count(data.uniqueVisitors, "uniqueVisitors"),
+      bookingRequests: count(data.bookingRequests, "bookingRequests"),
+      leadEnquiries: count(data.leadEnquiries, "leadEnquiries"),
+      serviceRequests,
+    });
+  }
+
+  const days: BusinessAnalytics["daily"] = [];
+  const serviceTotals = new Map<string, number>();
+  let views = 0;
+  let uniqueVisitors = 0;
+  let bookingRequests = 0;
+  let leadEnquiries = 0;
+  for (let offset = 0; offset < 30; offset += 1) {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + offset);
+    const day = date.toISOString().slice(0, 10);
+    const metric = dailyByDay.get(day);
+    const dayViews = metric?.views ?? 0;
+    const dayBookings = metric?.bookingRequests ?? 0;
+    views += dayViews;
+    uniqueVisitors += metric?.uniqueVisitors ?? 0;
+    bookingRequests += dayBookings;
+    leadEnquiries += metric?.leadEnquiries ?? 0;
+    days.push({ day, views: dayViews, bookingRequests: dayBookings });
+    for (const [serviceId, requests] of Object.entries(metric?.serviceRequests ?? {})) {
+      serviceTotals.set(serviceId, (serviceTotals.get(serviceId) ?? 0) + requests);
+    }
+  }
+
+  const requestedServices = [...serviceTotals.entries()]
+    .map(([serviceId, requests]) => ({
+      name: serviceId === "direct_enquiry" ? "Direct enquiries" : serviceNames.get(serviceId) ?? "Removed service",
+      requests,
+    }))
+    .sort((left, right) => right.requests - left.requests || left.name.localeCompare(right.name))
+    .slice(0, 5);
+
+  return {
+    businessId: business.id,
+    businessName: business.name,
+    views,
+    uniqueVisitors,
+    bookingRequests,
+    leadEnquiries,
+    daily: days.slice(-14),
+    requestedServices,
+  };
+}
+
 export async function getDashboardData(ownerId?: string) {
   const businesses = ownerId
     ? (await businessesCollection().where("ownerId", "==", ownerId).get()).docs.map(businessFromSnapshot)
     : await getBusinesses();
   const businessIds = new Set(businesses.map((business) => business.id));
   const leads = (await getLeads()).filter((lead) => businessIds.has(lead.businessId));
+  const businessAnalytics = ownerId
+    ? await Promise.all(businesses.map(getBusinessAnalytics))
+    : [];
 
   return {
     businessCount: businesses.length,
     leadCount: leads.length,
     businesses,
     leads: leads.slice(0, 4),
+    businessAnalytics,
   };
 }

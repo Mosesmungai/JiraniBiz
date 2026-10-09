@@ -1,9 +1,12 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 import { NextResponse } from "next/server";
+import { clientAddress } from "@/lib/client-address";
 import { getFirestoreDb } from "@/lib/firebase-admin";
 import { rateLimitsCollection } from "@/lib/firestore";
 import { rateLimitExceededResponse } from "@/lib/rate-limit-response";
+
+export { clientAddress };
 
 const MINUTE = 60_000;
 
@@ -22,13 +25,6 @@ function privacySafeId(route: string, key: string) {
   const secret = process.env.SESSION_SECRET;
   if (!secret) throw new Error("SESSION_SECRET is required for rate limiting.");
   return createHmac("sha256", secret).update(`${route}:${key}`).digest("hex");
-}
-
-export function clientAddress(request: Request) {
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp.slice(0, 128);
-  const forwardedIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwardedIp ? forwardedIp.slice(0, 128) : "unknown";
 }
 
 export async function consumeRateLimits(

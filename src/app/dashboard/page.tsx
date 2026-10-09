@@ -5,6 +5,8 @@ import { cookies } from "next/headers";
 import { BusinessForm } from "@/components/business-form";
 import { AdminReviewQueue } from "@/components/admin-review-queue";
 import { SubscriptionRenewalForm } from "@/components/subscription-renewal-form";
+import { BusinessContactForm } from "@/components/business-contact-form";
+import { BusinessInsights } from "@/components/business-insights";
 import { getBusinessReviewQueue, getDashboardData } from "@/lib/store";
 import { getUserFromSession, SESSION_COOKIE } from "@/lib/auth";
 import { isSubscriptionEntitled, SUBSCRIPTION_PLANS } from "@/lib/subscription";
@@ -76,6 +78,12 @@ export default async function DashboardPage() {
           {overview.map((item) => <div key={item.label} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_8px_24px_rgba(20,48,43,0.04)]"><div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</div><div className="mt-3 break-words text-2xl font-semibold tracking-tight text-slate-900">{item.value}</div></div>)}
         </div>
 
+        {user.role === "business_owner" && (
+          <div className="mt-7">
+            <BusinessInsights businesses={dashboard.businessAnalytics} />
+          </div>
+        )}
+
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           <section className="space-y-5">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
@@ -132,6 +140,7 @@ export default async function DashboardPage() {
                             paymentInstructions={paymentInstructions}
                           />
                         )}
+                        <BusinessContactForm businessId={business.id} socials={business.socials} />
                       </article>
                     );
                   })}

@@ -2,7 +2,7 @@
 
 Firebase project ID: `jiranibiz`
 
-The application uses Cloud Firestore for server-side persistent storage. The Firebase Admin SDK is server-only. Core collections are `users`, `sessions`, `businesses`, `businessSlugs`, `userEmails`, `services`, `leads`, `bookings`, `reviews`, `businessPayments`, `businessReviews`, `business_verifications`, `passwordResetTokens`, and `rateLimits`. Signed-in discovery preferences are stored at `users/{userId}/preferences/discovery`; the API accepts only bounded, strict preference fields.
+The application uses Cloud Firestore for server-side persistent storage. The Firebase Admin SDK is server-only. Core collections are `users`, `sessions`, `businesses`, `businessSlugs`, `userEmails`, `services`, `leads`, `bookings`, `reviews`, `businessPayments`, `businessReviews`, `business_verifications`, `passwordResetTokens`, `rateLimits`, and `businessMetricVisitors`. Daily business analytics are stored under `businesses/{businessId}/metrics/{YYYY-MM-DD}`. Signed-in discovery preferences are stored at `users/{userId}/preferences/discovery`; the API accepts only bounded, strict preference fields.
 
 Business listings use monthly visibility subscriptions: KES 500 for an area, KES 1,000 for a selected region, and KES 2,000 country-wide. Owners may instead start a seven-day trial for their selected scope. New listings require two to five business photos and precise device coordinates with reported accuracy of 100 metres or better. They are not published until location verification is approved; paid plans additionally require administrator confirmation of the submitted payment reference. Owners can submit another monthly payment from the dashboard to extend a trial or active/expired subscription; a renewal under review retains the existing visibility only until its current expiry. Expired trials and subscriptions are excluded from public discovery. Promotion is capped at the top 100 eligible listings in each exact geographic scope, ranked by rating, review count, then business ID.
 
@@ -42,10 +42,11 @@ This project has no SQL tables, Supabase, or `auth.uid()` policies. It uses Clou
 
 The checked-in [`firestore.rules`](../firestore.rules) deny all direct client reads and writes to every Firestore document, including nested preferences. [`storage.rules`](../storage.rules) likewise denies direct client Storage access; the server uses Admin SDK uploads and short-lived signed read URLs. Do not loosen these rules to permit browser database access without adding Firebase Authentication and independently validated rules. Deploy the rules using `firebase deploy --only firestore:rules,storage --project jiranibiz`.
 
-The `rateLimits` collection stores HMAC-keyed counters with an `expiresAt` timestamp. Configure Firestore TTL so old counters are removed:
+The `rateLimits` and `businessMetricVisitors` collections store documents with an `expiresAt` timestamp. Configure Firestore TTL for both collection groups so old rate-limit counters and privacy-preserving visitor keys are removed:
 
 ```sh
 gcloud firestore fields ttls update expiresAt --collection-group=rateLimits --enable-ttl --project jiranibiz
+gcloud firestore fields ttls update expiresAt --collection-group=businessMetricVisitors --enable-ttl --project jiranibiz
 ```
 
 The deployment ingress must overwrite or sanitize `X-Real-IP`/`X-Forwarded-For`; rate-limit correctness depends on receiving a trusted client address rather than a caller-controlled header.
@@ -56,6 +57,8 @@ The deployment ingress must overwrite or sanitize `X-Real-IP`/`X-Forwarded-For`;
 | --- | --- |
 | `GET /api/businesses` | Publicly visible businesses are public. A signed-in business owner receives only the list filtered by the session user ID. |
 | `POST /api/businesses` | Business owner or admin only. Business `ownerId` comes from the session; client-supplied owner/user IDs are rejected. Admin-created listings have no owner ID. |
+| `PUT /api/businesses/[id]/contact` | Business owner only. The stored `ownerId` must match the session user; social destinations are validated HTTPS URLs and WhatsApp is generated from an international number. |
+| `POST /api/businesses/[id]/views` | Public, rate-limited profile-view event. The server ignores unpublished listings and excludes the authenticated owner; daily anonymous visitor keys are HMACed and expire. |
 | `POST /api/businesses/verify-location` | Business owner or admin only. A business owner must match the stored business `ownerId`; admin may act across businesses. |
 | `POST /api/businesses/[id]/payment` | Business owner only; the store transaction compares the stored `ownerId` to the session user ID. |
 | `GET /api/bookings` | Session required. Customers get their bookings by session `customerId`; business owners get bookings only for businesses owned by their session user. |
@@ -83,7 +86,9 @@ All JSON schemas are strict: unknown fields fail with `400`. Multipart forms rej
 | `POST /api/auth/logout`, `GET` routes | No body |
 | `POST /api/auth/password-reset` | `{ email }` |
 | `POST /api/auth/password-reset/confirm` | `{ token, password }` |
-| `POST /api/businesses` | Multipart scalar fields `name, category, city, area, country, region, description, phone, email, planId, trial, location`; repeated `photos` files only |
+| `POST /api/businesses` | Multipart scalar fields `name, category, city, area, country, region, description, phone, email, whatsappNumber?, instagram?, facebook?, x?, website?, planId, trial, location`; repeated `photos` files only |
+| `PUT /api/businesses/[id]/contact` | `{ whatsappNumber, instagram, facebook, x, website }`; WhatsApp is an international number; profile links must use HTTPS |
+| `POST /api/businesses/[id]/views` | No body; server derives listing and visitor identity |
 | `POST /api/businesses/verify-location` | Multipart `businessId, photo, latitude, longitude, accuracy` |
 | `POST /api/businesses/[id]/payment` | `{ reference }` |
 | `POST /api/admin/businesses/[id]/review` | `{ action }`; action is one of the four review actions |
@@ -112,6 +117,8 @@ Limits are shared across app instances using transactional Firestore counters. I
 | `GET /api/bookings`, `GET /api/preferences` | 60/IP/minute and 60/session-user/minute |
 | `PUT /api/preferences` | 30/IP/hour and 30/session-user/hour |
 | `POST /api/businesses`, `POST /api/businesses/verify-location` | 3/IP/hour and 3/session-user/hour |
+| `PUT /api/businesses/[id]/contact` | 20/IP/hour and 20/session-user/hour |
+| `POST /api/businesses/[id]/views` | 240/IP/hour |
 | `POST /api/businesses/[id]/payment` | 10/IP/hour and 10/session-user/hour |
 | `POST /api/bookings` | 20/IP/hour and 20/session-user/hour |
 | `GET`, `PATCH`, `DELETE /api/bookings/[id]` | 30/IP/hour and 30/session-user/hour per operation |
@@ -120,6 +127,12 @@ Limits are shared across app instances using transactional Firestore counters. I
 | `POST /api/admin/businesses/[id]/review` | 30/IP/hour and 30/session-user/hour |
 
 An exceeded limit returns `429` with JSON `{ "error": "Too many requests. Please try again later.", "retryAfterSeconds": <seconds> }` and a matching `Retry-After` header.
+
+### Business performance metrics and contact links
+
+Owner dashboards show 30-day profile views, daily estimated unique visitors, booking requests, booking-to-profile-view ratio, direct enquiries, popular requested services, and a 14-day activity chart. The profile-view client counts at most one visit per browser tab session per listing; the server separately de-duplicates estimated visitors by a daily HMAC of trusted client IP and user-agent. That visitor total is approximate, can undercount shared networks, and excludes an authenticated listing owner. Analytics begin accruing after this feature is deployed; existing bookings and profile history are not backfilled.
+
+Owners can set an international WhatsApp number and HTTPS social/website links during listing creation or later from the dashboard. WhatsApp destinations use `https://wa.me/<country-code-and-number>`. Public profiles show direct links with local SVG icons. Third-party profile pictures are not fetched or embedded because platform APIs generally require account authorization and scraping can expose visitor data or violate platform controls.
 
 ### Password reset
 

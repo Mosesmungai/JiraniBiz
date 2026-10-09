@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BookingForm } from "@/components/booking-form";
+import { BusinessSocialLinks } from "@/components/business-social-links";
 import {
   DiscoveryPreferencesProvider,
   DiscoveryPreferencesStatus,
@@ -32,7 +33,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ slug:
         city: business.city,
         area: business.area,
       }} />
-      <ViewTracker slug={business.slug} />
+      <ViewTracker businessId={business.id} slug={business.slug} />
       <header className="site-header border-b"><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 md:px-6">
         <Link href="/" className="flex items-center gap-3 font-semibold"><div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#0d2f3d] p-1"><Image src="/jiranibiz-logo.png" alt="JiraniBiz logo" width={52} height={52} className="h-full w-full object-contain" /></div><span className="text-lg tracking-[-0.05em]">JiraniBiz</span></Link>
         <div className="flex items-center gap-3"><Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium">Back to results</Link><Link href={mapsUrl} target="_blank" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Open map</Link></div>
@@ -50,7 +51,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ slug:
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)] md:p-6"><h2 className="text-xl font-semibold">About this business</h2><p className="mt-3 text-sm leading-7 text-slate-600 md:text-base">{business.description}</p><div className="mt-5 flex flex-wrap gap-2">{business.services.map((service) => <span key={service} className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900">{service}</span>)}</div></div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)] md:p-6"><h2 className="text-xl font-semibold">Verified business details</h2><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Verification status</div><div className="mt-1.5 font-semibold">{business.verification.status}</div></div><div><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Location proof</div><div className="mt-1.5 font-semibold">{business.location?.label ?? `${business.area}, ${business.city}`}</div></div></div></div>
         </section>
-        <aside className="space-y-4"><BookingForm businessId={business.id} businessName={business.name} /><LeadRequestForm businessSlug={business.slug} /><div className="rounded-2xl border border-emerald-950/10 bg-[#173b37] p-5 text-white shadow-[0_12px_30px_rgba(20,48,43,0.12)]"><p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100">Business contact</p><div className="mt-3 space-y-2 text-sm text-emerald-50">{business.phone && <div>{business.phone}</div>}{business.email && <div className="break-all">{business.email}</div>}{!business.phone && !business.email && <div>Contact details have not been provided yet.</div>}</div><div className="mt-4 border-t border-white/15 pt-4 text-sm text-emerald-50/80">{business.area}, {business.city}</div><Link href={mapsUrl} target="_blank" rel="noreferrer" className="mt-4 block w-full rounded-full bg-white px-4 py-3 text-center text-sm font-semibold text-[#173b37]">Open in Maps</Link></div></aside>
+        <aside className="space-y-4"><BookingForm businessId={business.id} businessName={business.name} /><LeadRequestForm businessSlug={business.slug} /><div className="rounded-2xl border border-emerald-950/10 bg-[#173b37] p-5 text-white shadow-[0_12px_30px_rgba(20,48,43,0.12)]"><p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100">Business contact</p><div className="mt-3 space-y-2 text-sm text-emerald-50">{business.phone && <a href={`tel:${business.phone.replace(/[^\d+]/g, "")}`} className="block hover:text-white">{business.phone}</a>}{business.email && <a href={`mailto:${business.email}`} className="block break-all hover:text-white">{business.email}</a>}{!business.phone && !business.email && <div>Contact details have not been provided yet.</div>}</div><div className="mt-4 border-t border-white/15 pt-4 text-sm text-emerald-50/80">{business.area}, {business.city}</div><Link href={mapsUrl} target="_blank" rel="noopener noreferrer" className="mt-4 block w-full rounded-full bg-white px-4 py-3 text-center text-sm font-semibold text-[#173b37]">Open in Maps</Link></div><BusinessSocialLinks socials={business.socials} businessName={business.name} /></aside>
       </div></main>
     </div>
     </DiscoveryPreferencesProvider>

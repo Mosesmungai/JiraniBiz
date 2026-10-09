@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     const form = parsedForm.data;
     const formError = parseStrictFormData(
       form,
-      ["name", "category", "city", "area", "country", "region", "description", "phone", "email", "planId", "trial", "location", "photos"],
+      ["name", "category", "city", "area", "country", "region", "description", "phone", "email", "whatsappNumber", "instagram", "facebook", "x", "website", "planId", "trial", "location", "photos"],
       ["photos"],
     );
     if (formError) return formError;
@@ -77,6 +77,11 @@ export async function POST(request: Request) {
       description: form.get("description"),
       phone: form.get("phone"),
       email: form.get("email"),
+      whatsappNumber: form.get("whatsappNumber") ?? "",
+      instagram: form.get("instagram") ?? "",
+      facebook: form.get("facebook") ?? "",
+      x: form.get("x") ?? "",
+      website: form.get("website") ?? "",
       planId: form.get("planId"),
       trial: trialInput === "true" ? true : trialInput === "false" ? false : undefined,
       location,
@@ -121,6 +126,15 @@ export async function POST(request: Request) {
       description: input.description,
       phone: input.phone,
       email: input.email,
+      socials: {
+        whatsapp: input.whatsappNumber
+          ? `https://wa.me/${input.whatsappNumber.replace(/^\+/, "")}`
+          : "",
+        instagram: input.instagram,
+        facebook: input.facebook,
+        x: input.x,
+        website: input.website,
+      },
       photos: uploaded.paths.map((path) => `storage://${path}`),
       subscription: input.trial
         ? createTrialSubscription(input.planId, input.region || undefined)

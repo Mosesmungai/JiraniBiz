@@ -7,6 +7,9 @@ export { FieldValue };
 export const usersCollection = () => getFirestoreDb().collection("users");
 export const sessionsCollection = () => getFirestoreDb().collection("sessions");
 export const businessesCollection = () => getFirestoreDb().collection("businesses");
+export const businessMetricVisitorsCollection = () => getFirestoreDb().collection("businessMetricVisitors");
+export const businessMetricsCollection = (businessId: string) =>
+  businessesCollection().doc(businessId).collection("metrics");
 export const userEmailsCollection = () => getFirestoreDb().collection("userEmails");
 export const businessSlugsCollection = () => getFirestoreDb().collection("businessSlugs");
 export const servicesCollection = () => getFirestoreDb().collection("services");
