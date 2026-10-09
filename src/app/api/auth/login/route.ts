@@ -1,10 +1,23 @@
 import { NextResponse } from "next/server";
 import { authenticateUser, createSession, SESSION_COOKIE } from "@/lib/auth";
+import { clientAddress, clientRateLimit, enforceRateLimit } from "@/lib/rate-limit";
+import { loginBodySchema, parseJsonBody } from "@/lib/request-schemas";
 
 export async function POST(request: Request) {
+  const generalLimit = await clientRateLimit(request, "auth-login");
+  if (generalLimit) return generalLimit;
+
+  const parsed = await parseJsonBody(request, loginBodySchema);
+  if (parsed.response) return parsed.response;
+  const ip = clientAddress(request);
+  const attemptLimit = await enforceRateLimit("auth-login-attempt", [
+    { key: `ip:${ip}`, limit: 20, windowMs: 15 * 60 * 1000 },
+    { key: `email-ip:${parsed.data.email.toLowerCase()}:${ip}`, limit: 5, windowMs: 15 * 60 * 1000 },
+  ]);
+  if (attemptLimit) return attemptLimit;
+
   try {
-    const body = await request.json();
-    const user = await authenticateUser(String(body.email ?? ""), String(body.password ?? ""));
+    const user = await authenticateUser(parsed.data.email, parsed.data.password);
 
     if (!user) return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
 

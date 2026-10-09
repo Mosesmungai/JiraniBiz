@@ -9,6 +9,8 @@ import { getFirestoreDb } from "@/lib/firebase-admin";
 import { distanceKm } from "@/lib/geo";
 import { isDeviceLocation } from "@/lib/location";
 import { isSubscriptionEntitled } from "@/lib/subscription";
+import { clientRateLimit, userRateLimit } from "@/lib/rate-limit";
+import { parseBoundedFormData, parseStrictFormData, verificationFormSchema } from "@/lib/request-schemas";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -16,16 +18,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export async function POST(request: Request) {
   try {
+    const ipLimit = await clientRateLimit(request, "business-verification-upload", 3, 60 * 60 * 1000);
+    if (ipLimit) return ipLimit;
     const token = (await cookies()).get(SESSION_COOKIE)?.value;
     const user = token ? await getUserFromSession(token) : null;
     if (!user || !["business_owner", "admin"].includes(user.role)) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    const form = await request.formData();
-    const businessId = String(form.get("businessId") || "");
+    const userLimit = await userRateLimit(user.id, "business-verification-upload", 3, 60 * 60 * 1000);
+    if (userLimit) return userLimit;
+    const parsedForm = await parseBoundedFormData(request, 11 * 1024 * 1024, "Verification upload");
+    if (parsedForm.response) return parsedForm.response;
+    const form = parsedForm.data;
+    const formError = parseStrictFormData(form, ["businessId", "photo", "latitude", "longitude", "accuracy"]);
+    if (formError) return formError;
     const photo = form.get("photo");
-    const latitude = Number(form.get("latitude"));
-    const longitude = Number(form.get("longitude"));
-    const accuracy = Number(form.get("accuracy"));
-    if (!businessId || !(photo instanceof File) || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return NextResponse.json({ error: "Business, photo and live device coordinates are required." }, { status: 400 });
+    const latitudeInput = form.get("latitude");
+    const longitudeInput = form.get("longitude");
+    const accuracyInput = form.get("accuracy");
+    if (
+      typeof latitudeInput !== "string" || !latitudeInput.trim() ||
+      typeof longitudeInput !== "string" || !longitudeInput.trim() ||
+      typeof accuracyInput !== "string" || !accuracyInput.trim()
+    ) {
+      return NextResponse.json({ error: "Business, photo and valid device coordinates are required." }, { status: 400 });
+    }
+    const parsed = verificationFormSchema.safeParse({
+      businessId: form.get("businessId"),
+      latitude: Number(latitudeInput),
+      longitude: Number(longitudeInput),
+      accuracy: Number(accuracyInput),
+    });
+    if (!parsed.success || !(photo instanceof File)) {
+      return NextResponse.json({ error: "Business, photo and valid device coordinates are required." }, { status: 400 });
+    }
+    const { businessId, latitude, longitude, accuracy } = parsed.data;
     if (!isDeviceLocation({ latitude, longitude, accuracy })) return NextResponse.json({ error: "Capture device location with reported accuracy of 100 metres or better." }, { status: 400 });
     if (photo.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Photo must be 10MB or smaller." }, { status: 400 });
     if (!["image/jpeg", "image/png", "image/webp"].includes(photo.type)) return NextResponse.json({ error: "Upload a JPEG, PNG, or WebP verification photo." }, { status: 400 });

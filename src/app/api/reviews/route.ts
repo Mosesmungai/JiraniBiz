@@ -7,6 +7,8 @@ import {
   DuplicateReviewError,
   getReviews,
 } from "@/lib/store";
+import { clientRateLimit, userRateLimit } from "@/lib/rate-limit";
+import { parseJsonBody, reviewCreateBodySchema } from "@/lib/request-schemas";
 
 async function currentUser() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -14,33 +16,30 @@ async function currentUser() {
 }
 
 export async function GET(request: Request) {
+  const ipLimit = await clientRateLimit(request, "reviews-list");
+  if (ipLimit) return ipLimit;
   const businessId = new URL(request.url).searchParams.get("businessId");
   if (!businessId) return NextResponse.json({ error: "businessId is required." }, { status: 400 });
   return NextResponse.json(await getReviews(businessId));
 }
 
 export async function POST(request: Request) {
+  const ipLimit = await clientRateLimit(request, "reviews-create", 20, 60 * 60 * 1000);
+  if (ipLimit) return ipLimit;
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Please sign in before reviewing." }, { status: 401 });
+  const userLimit = await userRateLimit(user.id, "reviews-create", 20, 60 * 60 * 1000);
+  if (userLimit) return userLimit;
+
+  const parsed = await parseJsonBody(request, reviewCreateBodySchema);
+  if (parsed.response) return parsed.response;
 
   try {
-    const { businessId, rating, comment = "" } = await request.json();
-    const numericRating = Number(rating);
-    if (
-      typeof businessId !== "string" ||
-      !businessId ||
-      !Number.isInteger(numericRating) ||
-      numericRating < 1 ||
-      numericRating > 5
-    ) {
-      return NextResponse.json({ error: "businessId and a rating from 1 to 5 are required." }, { status: 400 });
-    }
-
     const review = await createReview({
-      businessId,
+      businessId: parsed.data.businessId,
       customerId: user.id,
-      rating: numericRating,
-      comment: String(comment).trim(),
+      rating: parsed.data.rating,
+      comment: parsed.data.comment,
     });
     return NextResponse.json(review, { status: 201 });
   } catch (error) {

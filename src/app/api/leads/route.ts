@@ -2,22 +2,23 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getUserFromSession, SESSION_COOKIE } from "@/lib/auth";
 import { BusinessNotFoundError, createLead } from "@/lib/store";
+import { clientRateLimit } from "@/lib/rate-limit";
+import { leadCreateBodySchema, parseJsonBody } from "@/lib/request-schemas";
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { businessSlug, businessName, name, phone, message } = body;
-    if (!businessSlug || !businessName || !name || !phone || !message) {
-      return NextResponse.json({ error: "Missing required lead details." }, { status: 400 });
-    }
+  const ipLimit = await clientRateLimit(request, "leads-create", 10, 60 * 60 * 1000);
+  if (ipLimit) return ipLimit;
 
+  const parsed = await parseJsonBody(request, leadCreateBodySchema);
+  if (parsed.response) return parsed.response;
+  try {
     const cookieStore = await cookies();
     const user = await getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
     const lead = await createLead({
-      businessSlug,
-      name,
-      phone,
-      message,
+      businessSlug: parsed.data.businessSlug,
+      name: parsed.data.name,
+      phone: parsed.data.phone,
+      message: parsed.data.message,
       customerId: user?.id,
     });
 

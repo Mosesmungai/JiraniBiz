@@ -1,6 +1,27 @@
 import { createHash, randomUUID } from "node:crypto";
 import { FieldValue, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import type { AuthUser } from "@/lib/auth";
+import { getBookingAccessRole } from "@/lib/booking-access";
+import {
+  BookingNotFoundError,
+  BookingPermissionError,
+  BookingStateConflictError,
+  BusinessNotFoundError,
+  BusinessSlugConflictError,
+  DuplicateReviewError,
+  NotBusinessOwnerError,
+  ServiceNotFoundError,
+} from "@/lib/store-errors";
+export {
+  BookingNotFoundError,
+  BookingPermissionError,
+  BookingStateConflictError,
+  BusinessNotFoundError,
+  BusinessSlugConflictError,
+  DuplicateReviewError,
+  NotBusinessOwnerError,
+  ServiceNotFoundError,
+} from "@/lib/store-errors";
 import { getFirestoreDb } from "@/lib/firebase-admin";
 import { getStorage } from "firebase-admin/storage";
 import {
@@ -68,13 +89,6 @@ export type Review = {
   createdAt: string;
 };
 
-export class BusinessNotFoundError extends Error {
-  constructor() {
-    super("Business not found");
-    this.name = "BusinessNotFoundError";
-  }
-}
-
 function requiredBoolean(value: unknown, field: string): boolean {
   if (typeof value !== "boolean") {
     throw new Error(`Invalid business document: ${field} is not a boolean.`);
@@ -87,34 +101,6 @@ function requiredStringAllowEmpty(value: unknown, field: string): string {
     throw new Error(`Invalid business document: ${field} is not a string.`);
   }
   return value;
-}
-
-export class ServiceNotFoundError extends Error {
-  constructor() {
-    super("Selected service does not belong to this business.");
-    this.name = "ServiceNotFoundError";
-  }
-}
-
-export class NotBusinessOwnerError extends Error {
-  constructor() {
-    super("You do not own this business.");
-    this.name = "NotBusinessOwnerError";
-  }
-}
-
-export class DuplicateReviewError extends Error {
-  constructor() {
-    super("You have already reviewed this business.");
-    this.name = "DuplicateReviewError";
-  }
-}
-
-export class BusinessSlugConflictError extends Error {
-  constructor() {
-    super("A business with this slug already exists.");
-    this.name = "BusinessSlugConflictError";
-  }
 }
 
 function record(value: unknown, label: string): DocumentData {
@@ -327,8 +313,10 @@ function serviceFromSnapshot(snapshot: QueryDocumentSnapshot): Service {
   };
 }
 
-function bookingFromSnapshot(snapshot: QueryDocumentSnapshot): Booking {
+function bookingFromSnapshot(snapshot: DocumentSnapshot): Booking {
+  if (!snapshot.exists) throw new BookingNotFoundError();
   const data = snapshot.data();
+  if (!data) throw new Error(`Booking document ${snapshot.id} has no data.`);
   const status = data.status;
   if (
     status !== "Requested" &&
@@ -849,6 +837,88 @@ export async function getBookingsForUser(user: AuthUser): Promise<Booking[]> {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
+async function bookingAccessRole(
+  booking: Booking,
+  user: AuthUser,
+  businessOwnerId?: string,
+): Promise<"customer" | "business_owner" | "admin"> {
+  const role = getBookingAccessRole(booking, user, businessOwnerId);
+  if (role) return role;
+  throw new BookingNotFoundError();
+}
+
+export async function getBookingForUser(bookingId: string, user: AuthUser): Promise<Booking> {
+  const snapshot = await bookingsCollection().doc(bookingId).get();
+  if (!snapshot.exists) throw new BookingNotFoundError();
+  const booking = bookingFromSnapshot(snapshot);
+  const business = user.role === "business_owner"
+    ? await businessesCollection().doc(booking.businessId).get()
+    : undefined;
+  await bookingAccessRole(booking, user, business?.data()?.ownerId);
+  return booking;
+}
+
+export async function updateBookingForUser(
+  bookingId: string,
+  user: AuthUser,
+  changes: { scheduledAt?: string; notes?: string; status?: Booking["status"] },
+): Promise<Booking> {
+  const bookingRef = bookingsCollection().doc(bookingId);
+  return getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(bookingRef);
+    if (!snapshot.exists) throw new BookingNotFoundError();
+    const booking = bookingFromSnapshot(snapshot);
+    const business = user.role === "business_owner"
+      ? await transaction.get(businessesCollection().doc(booking.businessId))
+      : undefined;
+    const accessRole = await bookingAccessRole(booking, user, business?.data()?.ownerId);
+
+    if (accessRole === "customer") {
+      if (changes.status !== undefined) throw new BookingPermissionError();
+      if (booking.status !== "Requested") {
+        throw new BookingStateConflictError("Only requested bookings can be rescheduled.");
+      }
+    } else if (accessRole === "business_owner") {
+      if (changes.status === undefined || changes.scheduledAt !== undefined || changes.notes !== undefined) {
+        throw new BookingPermissionError();
+      }
+      const allowedTransitions: Record<Booking["status"], Booking["status"][]> = {
+        Requested: ["Confirmed", "Cancelled"],
+        Confirmed: ["Completed", "Cancelled"],
+        Completed: [],
+        Cancelled: [],
+      };
+      if (!allowedTransitions[booking.status].includes(changes.status)) {
+        throw new BookingStateConflictError("This booking status transition is not allowed.");
+      }
+    }
+
+    const patch = Object.fromEntries(
+      Object.entries(changes).filter(([, value]) => value !== undefined),
+    );
+    transaction.update(bookingRef, patch);
+    return { ...booking, ...changes };
+  });
+}
+
+export async function deleteBookingForUser(bookingId: string, user: AuthUser): Promise<void> {
+  const bookingRef = bookingsCollection().doc(bookingId);
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(bookingRef);
+    if (!snapshot.exists) throw new BookingNotFoundError();
+    const booking = bookingFromSnapshot(snapshot);
+    const business = user.role === "business_owner"
+      ? await transaction.get(businessesCollection().doc(booking.businessId))
+      : undefined;
+    const accessRole = await bookingAccessRole(booking, user, business?.data()?.ownerId);
+    if (accessRole === "business_owner") throw new BookingPermissionError();
+    if (accessRole === "customer" && booking.status !== "Requested") {
+      throw new BookingStateConflictError("Only requested bookings can be deleted.");
+    }
+    transaction.delete(bookingRef);
+  });
+}
+
 export async function getReviews(businessId: string): Promise<Review[]> {
   const snapshot = await reviewsCollection().where("businessId", "==", businessId).get();
   return snapshot.docs
@@ -912,7 +982,6 @@ export async function getDashboardData(ownerId?: string) {
   return {
     businessCount: businesses.length,
     leadCount: leads.length,
-    totalRevenue: businesses.reduce((sum, business) => sum + business.priceFrom, 0),
     businesses,
     leads: leads.slice(0, 4),
   };

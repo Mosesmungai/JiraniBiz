@@ -1,15 +1,28 @@
 import { NextResponse } from "next/server";
 import { createSession, createUser, DuplicateEmailError, SESSION_COOKIE } from "@/lib/auth";
+import { clientAddress, clientRateLimit, enforceRateLimit } from "@/lib/rate-limit";
+import { parseJsonBody, registerBodySchema } from "@/lib/request-schemas";
 
 export async function POST(request: Request) {
+  const generalLimit = await clientRateLimit(request, "auth-register");
+  if (generalLimit) return generalLimit;
+
+  const parsed = await parseJsonBody(request, registerBodySchema);
+  if (parsed.response) return parsed.response;
+  const ip = clientAddress(request);
+  const attemptLimit = await enforceRateLimit("auth-register-attempt", [
+    { key: `ip:${ip}`, limit: 5, windowMs: 60 * 60 * 1000 },
+    { key: `email:${parsed.data.email.toLowerCase()}`, limit: 3, windowMs: 24 * 60 * 60 * 1000 },
+  ]);
+  if (attemptLimit) return attemptLimit;
+
   try {
-    const body = await request.json();
     const user = await createUser({
-      name: String(body.name ?? ""),
-      email: String(body.email ?? ""),
-      phone: body.phone ? String(body.phone) : undefined,
-      password: String(body.password ?? ""),
-      role: body.role === "business_owner" ? "business_owner" : "customer",
+      name: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+      password: parsed.data.password,
+      role: parsed.data.role,
     });
 
     const session = await createSession(user.id);
@@ -23,9 +36,6 @@ export async function POST(request: Request) {
     });
     return response;
   } catch (error) {
-    if (error instanceof SyntaxError) {
-      return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
-    }
     if (error instanceof DuplicateEmailError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }

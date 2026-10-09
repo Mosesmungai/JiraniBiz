@@ -9,6 +9,8 @@ import {
   getServicesForBusiness,
   NotBusinessOwnerError,
 } from "@/lib/store";
+import { clientRateLimit, userRateLimit } from "@/lib/rate-limit";
+import { parseJsonBody, serviceCreateBodySchema } from "@/lib/request-schemas";
 
 async function currentUser() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -16,6 +18,8 @@ async function currentUser() {
 }
 
 export async function GET(request: Request) {
+  const ipLimit = await clientRateLimit(request, "services-list");
+  if (ipLimit) return ipLimit;
   const { searchParams } = new URL(request.url);
   const businessId = searchParams.get("businessId");
   const businessSlug = searchParams.get("businessSlug");
@@ -31,23 +35,23 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const ipLimit = await clientRateLimit(request, "services-create", 20, 60 * 60 * 1000);
+  if (ipLimit) return ipLimit;
   const user = await currentUser();
   if (!user || (user.role !== "business_owner" && user.role !== "admin")) {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
+  const userLimit = await userRateLimit(user.id, "services-create", 20, 60 * 60 * 1000);
+  if (userLimit) return userLimit;
 
+  const parsed = await parseJsonBody(request, serviceCreateBodySchema);
+  if (parsed.response) return parsed.response;
   try {
-    const body = await request.json();
-    const { businessId, name, description = "", price = 0 } = body;
-    if (typeof businessId !== "string" || typeof name !== "string" || !name.trim()) {
-      return NextResponse.json({ error: "businessId and name are required." }, { status: 400 });
-    }
-
     const service = await createService({
-      businessId,
-      name: name.trim(),
-      description: String(description).trim(),
-      price: Number(price) || 0,
+      businessId: parsed.data.businessId,
+      name: parsed.data.name,
+      description: parsed.data.description,
+      price: parsed.data.price,
       user,
     });
     return NextResponse.json(service, { status: 201 });

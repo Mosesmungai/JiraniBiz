@@ -15,5 +15,7 @@ export const bookingsCollection = () => getFirestoreDb().collection("bookings");
 export const reviewsCollection = () => getFirestoreDb().collection("reviews");
 export const businessPaymentsCollection = () => getFirestoreDb().collection("businessPayments");
 export const businessReviewsCollection = () => getFirestoreDb().collection("businessReviews");
+export const passwordResetTokensCollection = () => getFirestoreDb().collection("passwordResetTokens");
+export const rateLimitsCollection = () => getFirestoreDb().collection("rateLimits");
 export const userPreferencesCollection = (userId: string) =>
   usersCollection().doc(userId).collection("preferences");

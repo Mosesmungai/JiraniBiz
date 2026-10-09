@@ -1,8 +1,14 @@
+import "server-only";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import type { DocumentData } from "firebase-admin/firestore";
 import { getFirestoreDb } from "@/lib/firebase-admin";
-import { sessionsCollection, userEmailsCollection, usersCollection } from "@/lib/firestore";
+import {
+  passwordResetTokensCollection,
+  sessionsCollection,
+  userEmailsCollection,
+  usersCollection,
+} from "@/lib/firestore";
 
 export type UserRole = "customer" | "business_owner" | "admin";
 
@@ -168,7 +174,80 @@ export async function getUserFromSession(token: string | undefined): Promise<Aut
   }
 
   const userSnapshot = await usersCollection().doc(session.userId).get();
-  return userFromDocument(userSnapshot.data(), userSnapshot.id);
+  const userData = userSnapshot.data();
+  if (typeof userData?.passwordChangedAt === "string") {
+    const passwordChangedAt = Date.parse(userData.passwordChangedAt);
+    const sessionCreatedAt = typeof session.createdAt === "string" ? Date.parse(session.createdAt) : Number.NaN;
+    if (!Number.isFinite(passwordChangedAt) || !Number.isFinite(sessionCreatedAt)) {
+      throw new Error("Session or password-change timestamp is invalid.");
+    }
+    if (sessionCreatedAt < passwordChangedAt) {
+      await sessionRef.delete();
+      return null;
+    }
+  }
+  return userFromDocument(userData, userSnapshot.id);
+}
+
+export async function createPasswordResetToken(emailInput: string) {
+  const email = normalizeEmail(emailInput);
+  const emailIndex = await userEmailsCollection().doc(emailDocumentId(email)).get();
+  const indexedUserId = emailIndex.data()?.userId;
+  const userId = typeof indexedUserId === "string"
+    ? indexedUserId
+    : (await usersCollection().where("email", "==", email).limit(1).get()).docs[0]?.id;
+  if (typeof userId !== "string") return null;
+
+  const token = randomBytes(32).toString("base64url");
+  const createdAtMs = Date.now();
+  await passwordResetTokensCollection().doc(hashToken(token)).create({
+    userId,
+    createdAtMs,
+    expiresAtMs: createdAtMs + 30 * 60 * 1000,
+  });
+  return token;
+}
+
+export async function completePasswordReset(token: string, password: string) {
+  const resetRef = passwordResetTokensCollection().doc(hashToken(token));
+  const now = Date.now();
+  const changedAt = new Date(now + 1).toISOString();
+  const candidateReset = await resetRef.get();
+  const candidate = candidateReset.data();
+  if (
+    !candidateReset.exists ||
+    typeof candidate?.userId !== "string" ||
+    typeof candidate.expiresAtMs !== "number" ||
+    candidate.expiresAtMs <= now
+  ) {
+    return false;
+  }
+  const passwordHash = hashPassword(password);
+  return getFirestoreDb().runTransaction(async (transaction) => {
+    const resetSnapshot = await transaction.get(resetRef);
+    const reset = resetSnapshot.data();
+    if (
+      !resetSnapshot.exists ||
+      typeof reset?.userId !== "string" ||
+      typeof reset.createdAtMs !== "number" ||
+      typeof reset.expiresAtMs !== "number" ||
+      reset.expiresAtMs <= now
+    ) {
+      return false;
+    }
+
+    const userRef = usersCollection().doc(reset.userId);
+    const userSnapshot = await transaction.get(userRef);
+    const userData = userSnapshot.data();
+    if (!userSnapshot.exists || !userData) return false;
+    const outstandingTokens = await transaction.get(
+      passwordResetTokensCollection().where("userId", "==", reset.userId),
+    );
+
+    transaction.update(userRef, { passwordHash, passwordChangedAt: changedAt });
+    for (const tokenSnapshot of outstandingTokens.docs) transaction.delete(tokenSnapshot.ref);
+    return true;
+  });
 }
 
 export async function destroySession(token: string | undefined) {

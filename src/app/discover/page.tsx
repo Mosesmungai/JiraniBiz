@@ -627,7 +627,7 @@ function DiscoverContent() {
               </div>
             ) : (
               filteredBusinesses.map((business) => (
-                <article key={business.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
+                <article key={business.id} className="lift-card overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
                   <div className="grid gap-4 p-4 md:grid-cols-[190px_1fr]">
                     <Image src={business.image} alt={business.name} width={800} height={600} className="h-44 w-full rounded-xl object-cover md:h-full" />
                     <div className="flex flex-col justify-between gap-4 p-1">

@@ -57,6 +57,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
+  return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
 function boundedString(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
   const result = value.trim();
@@ -69,9 +73,12 @@ function validTimestamp(value: unknown): string | null {
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
 }
 
-function parseLocation(value: unknown): PreferenceLocation | null {
+function parseLocation(value: unknown, withTimestamp = false): PreferenceLocation | null {
   if (value === null) return null;
   if (!isRecord(value)) return null;
+  if (!hasExactKeys(value, withTimestamp
+    ? ["country", "city", "area", "updatedAt"]
+    : ["country", "city", "area"])) return null;
   const country = boundedString(value.country, 80);
   const city = boundedString(value.city, 80);
   const area = value.area === "" ? "" : boundedString(value.area, 80);
@@ -86,6 +93,12 @@ function parseLocation(value: unknown): PreferenceLocation | null {
 
 export function parseDiscoveryPreferences(value: unknown): DiscoveryPreferences | null {
   if (!isRecord(value)) return null;
+  if (!hasExactKeys(value, [
+    "recentSearches",
+    "recentlyViewedBusinesses",
+    "preferredCategories",
+    "preferredLocations",
+  ])) return null;
   const {
     recentSearches,
     recentlyViewedBusinesses,
@@ -107,7 +120,7 @@ export function parseDiscoveryPreferences(value: unknown): DiscoveryPreferences 
 
   const searches: RecentSearch[] = [];
   for (const entry of recentSearches) {
-    if (!isRecord(entry)) return null;
+    if (!isRecord(entry) || !hasExactKeys(entry, ["query", "category", "location", "createdAt"])) return null;
     const query = boundedString(entry.query, 150);
     const category = boundedString(entry.category, 80);
     const createdAt = validTimestamp(entry.createdAt);
@@ -118,7 +131,7 @@ export function parseDiscoveryPreferences(value: unknown): DiscoveryPreferences 
 
   const views: RecentBusinessView[] = [];
   for (const entry of recentlyViewedBusinesses) {
-    if (!isRecord(entry)) return null;
+    if (!isRecord(entry) || !hasExactKeys(entry, ["id", "slug", "name", "category", "city", "area", "viewedAt"])) return null;
     const id = boundedString(entry.id, 128);
     const slug = boundedString(entry.slug, 150);
     const name = boundedString(entry.name, 200);
@@ -132,7 +145,7 @@ export function parseDiscoveryPreferences(value: unknown): DiscoveryPreferences 
 
   const categories: PreferredCategory[] = [];
   for (const entry of preferredCategories) {
-    if (!isRecord(entry)) return null;
+    if (!isRecord(entry) || !hasExactKeys(entry, ["name", "updatedAt"])) return null;
     const name = boundedString(entry.name, 80);
     const updatedAt = validTimestamp(entry.updatedAt);
     if (!name || !updatedAt) return null;
@@ -141,8 +154,8 @@ export function parseDiscoveryPreferences(value: unknown): DiscoveryPreferences 
 
   const locations: PreferredLocation[] = [];
   for (const entry of preferredLocations) {
-    if (!isRecord(entry)) return null;
-    const location = parseLocation(entry);
+    if (!isRecord(entry) || !hasExactKeys(entry, ["country", "city", "area", "updatedAt"])) return null;
+    const location = parseLocation(entry, true);
     const updatedAt = validTimestamp(entry.updatedAt);
     if (!location || !updatedAt) return null;
     locations.push({ ...location, updatedAt });

@@ -2,40 +2,32 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getUserFromSession, SESSION_COOKIE } from "@/lib/auth";
 import { BusinessNotFoundError, reviewBusiness } from "@/lib/store";
-
-type ReviewAction = "confirm_payment" | "reject_payment" | "approve_verification" | "reject_verification";
-
-function isReviewAction(value: unknown): value is ReviewAction {
-  return value === "confirm_payment" ||
-    value === "reject_payment" ||
-    value === "approve_verification" ||
-    value === "reject_verification";
-}
+import { clientRateLimit, userRateLimit } from "@/lib/rate-limit";
+import { adminReviewBodySchema, parseJsonBody } from "@/lib/request-schemas";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const ipLimit = await clientRateLimit(request, "admin-business-review", 30, 60 * 60 * 1000);
+    if (ipLimit) return ipLimit;
     const token = (await cookies()).get(SESSION_COOKIE)?.value;
     const user = token ? await getUserFromSession(token) : null;
     if (!user || user.role !== "admin") {
       return NextResponse.json({ error: "Administrator access is required." }, { status: 403 });
     }
+    const userLimit = await userRateLimit(user.id, "admin-business-review", 30, 60 * 60 * 1000);
+    if (userLimit) return userLimit;
 
-    const body: unknown = await request.json();
-    const action = typeof body === "object" && body !== null && !Array.isArray(body) && "action" in body
-      ? body.action
-      : null;
-    if (!isReviewAction(action)) {
-      return NextResponse.json({ error: "Select a valid review action." }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, adminReviewBodySchema);
+    if (parsed.response) return parsed.response;
 
     const { id } = await params;
     await reviewBusiness({
       businessId: id,
       adminId: user.id,
-      action,
+      action: parsed.data.action,
     });
     return NextResponse.json({ status: "updated" });
   } catch (error) {
@@ -52,9 +44,6 @@ export async function POST(
         error.message.includes("active subscription"))
     ) {
       return NextResponse.json({ error: error.message }, { status: 409 });
-    }
-    if (error instanceof SyntaxError) {
-      return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
     }
     console.error("Business review action failed", error);
     return NextResponse.json({ error: "Unable to complete the review action." }, { status: 500 });

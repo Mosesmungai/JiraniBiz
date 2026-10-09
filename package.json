@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test",
+    "test": "node --conditions=react-server --import tsx --test tests/*.test.*",
     "migrate:sqlite": "node scripts/migrate-sqlite.mjs",
     "migrate:firestore": "node scripts/import-sqlite-to-firestore.mjs"
   },
@@ -17,18 +17,22 @@
     "firebase": "^12.17.0",
     "firebase-admin": "^13.6.0",
     "next": "16.3.6",
+    "nodemailer": "^10.0.16",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "better-sqlite3": "^13.0.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

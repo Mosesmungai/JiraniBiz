@@ -6,8 +6,8 @@ import {
   parseDiscoveryPreferences,
 } from "@/lib/discovery-preferences";
 import { userPreferencesCollection } from "@/lib/firestore";
-
-const MAX_REQUEST_BYTES = 32 * 1024;
+import { clientRateLimit, userRateLimit } from "@/lib/rate-limit";
+import { parseJsonBody, preferencesBodySchema } from "@/lib/request-schemas";
 
 function privateJson(body: unknown, status = 200) {
   return NextResponse.json(body, {
@@ -21,11 +21,15 @@ async function authenticatedUser() {
   return getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const ipLimit = await clientRateLimit(request, "preferences-read");
+  if (ipLimit) return ipLimit;
   const user = await authenticatedUser();
   if (!user) {
     return privateJson({ authenticated: false, preferences: emptyDiscoveryPreferences() });
   }
+  const userLimit = await userRateLimit(user.id, "preferences-read");
+  if (userLimit) return userLimit;
 
   const snapshot = await userPreferencesCollection(user.id)
     .doc("discovery")
@@ -43,33 +47,16 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const ipLimit = await clientRateLimit(request, "preferences-write", 30, 60 * 60 * 1000);
+  if (ipLimit) return ipLimit;
   const user = await authenticatedUser();
   if (!user) return privateJson({ error: "Authentication required." }, 401);
+  const userLimit = await userRateLimit(user.id, "preferences-write", 30, 60 * 60 * 1000);
+  if (userLimit) return userLimit;
 
-  let text: string;
-  let body: unknown;
-  try {
-    text = await request.text();
-  } catch {
-    return privateJson({ error: "Unable to read request body." }, 400);
-  }
-  if (new TextEncoder().encode(text).byteLength > MAX_REQUEST_BYTES) {
-    return privateJson({ error: "Preferences payload is too large." }, 413);
-  }
-  try {
-    body = JSON.parse(text) as unknown;
-  } catch {
-    return privateJson({ error: "Request body must be valid JSON." }, 400);
-  }
-
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("preferences" in body)
-  ) {
-    return privateJson({ error: "A preferences object is required." }, 400);
-  }
-  const preferences = parseDiscoveryPreferences(body.preferences);
+  const parsed = await parseJsonBody(request, preferencesBodySchema);
+  if (parsed.response) return privateJson(await parsed.response.json(), parsed.response.status);
+  const preferences = parseDiscoveryPreferences(parsed.data.preferences);
   if (!preferences) {
     return privateJson({ error: "Preferences have an invalid shape or exceed allowed limits." }, 400);
   }

@@ -75,7 +75,7 @@ export default async function Home() {
                 Find trusted local experts in your area.
               </h1>
               <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 md:text-lg">
-                JiraniBiz helps people discover reliable, verified services and helps local businesses earn more leads, bookings and repeat customers.
+                JiraniBiz helps people discover local services with clear business details, while helping providers earn more enquiries and bookings.
               </p>
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -90,15 +90,11 @@ export default async function Home() {
               <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                  Verified businesses
+                  Simple booking requests
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                  Fast local bookings
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                  Revenue tracking
+                  Clear verification status
                 </div>
               </div>
             </div>
@@ -106,19 +102,14 @@ export default async function Home() {
             <div className="rounded-[28px] border border-slate-200 bg-white/90 p-3 shadow-[0_22px_60px_rgba(20,48,43,0.10)] backdrop-blur-sm">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Popular search</div>
-                  <div className="mt-4 flex items-center justify-between">
-                    <div>
-                      <div className="text-lg font-semibold text-slate-900">Cleaning</div>
-                      <div className="text-sm text-slate-500">Westlands & Kileleshwa</div>
-                    </div>
-                    <div className="rounded-2xl bg-emerald-100 px-2.5 py-1 text-sm font-semibold text-emerald-700">4.9</div>
-                  </div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Local reach</div>
+                  <div className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">{countriesServed}</div>
+                  <div className="mt-1 text-sm text-slate-500">{countriesServed === 1 ? "country represented" : "countries represented"}</div>
                 </div>
                 <div className="rounded-3xl border border-slate-200 bg-slate-900 p-4 text-white">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-300">Active listings</div>
-                  <div className="mt-4 text-3xl font-semibold">{listingCount}</div>
-                  <div className="mt-1 text-sm text-slate-300">Business profiles live across the region</div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-300">Community reviews</div>
+                  <div className="mt-4 text-3xl font-semibold">{totalReviews.toLocaleString()}</div>
+                  <div className="mt-1 text-sm text-slate-300">{totalReviews === 1 ? "customer review" : "customer reviews"} across local businesses</div>
                 </div>
                 <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   {featuredBusiness ? (
@@ -189,7 +180,7 @@ export default async function Home() {
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {categories.map((category) => (
-              <div key={category.name} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
+              <div key={category.name} className="lift-card rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-xl">{category.icon}</div>
                 <div className="mt-4 text-lg font-semibold text-slate-900">{category.name}</div>
                 <div className="mt-2 text-sm text-slate-600">{category.subtitle}</div>
@@ -217,7 +208,7 @@ export default async function Home() {
 
           <div className="mt-6 grid gap-4 xl:grid-cols-3">
             {featuredBusinesses.length ? featuredBusinesses.map((business) => (
-              <article key={business.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
+              <article key={business.id} className="lift-card rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
                 <div className="overflow-hidden rounded-xl">
                   <Image src={business.image} alt={business.name} width={800} height={600} className="h-52 w-full object-cover" />
                 </div>

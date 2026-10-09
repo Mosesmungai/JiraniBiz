@@ -1,40 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JiraniBiz
 
-## Firebase data storage
+JiraniBiz helps customers discover local service providers and gives businesses tools to manage listings, booking requests, and visibility subscriptions across East Africa.
 
-Application records are stored in Cloud Firestore. See [Firebase setup and migration](./firebase/README.md) for secure server configuration and the SQLite migration/import commands.
+## Run locally
 
-## Getting Started
+Requirements: Node.js and npm.
 
-First, run the development server:
-
-```bash
+```sh
+npm install
+cp .env.example .env.local
+# Add server-side Firebase settings and a unique SESSION_SECRET to .env.local.
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```sh
+npm test
+npx tsc --noEmit
+npm run lint
+npm run build
+```
 
-## Learn More
+## Data and deployment
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app uses Cloud Firestore through the server-side Firebase Admin SDK. Configure the Firebase credentials and session secret only in the local or deployment secret store. See [Firebase setup, security, and migration](./firebase/README.md) for environment-variable exposure, access rules, credential rotation, and SQLite import instructions.

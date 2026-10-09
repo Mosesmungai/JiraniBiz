@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function LeadRequestForm({ businessSlug, businessName }: { businessSlug: string; businessName: string }) {
+export function LeadRequestForm({ businessSlug }: { businessSlug: string }) {
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -22,7 +22,6 @@ export function LeadRequestForm({ businessSlug, businessName }: { businessSlug: 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         businessSlug,
-        businessName,
         ...form,
       }),
     });

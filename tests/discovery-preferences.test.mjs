@@ -59,7 +59,7 @@ test("recent searches, business views, and preferences remain bounded and dedupl
   assert.equal(preferences.recentSearches.some(({ query }) => query === "search 1"), false);
 });
 
-test("preference validation rejects oversized or malformed data and strips unknown fields", () => {
+test("preference validation rejects oversized, malformed, and unknown fields", () => {
   const value = {
     ...emptyDiscoveryPreferences(),
     recentlyViewedBusinesses: [{
@@ -75,9 +75,20 @@ test("preference validation rejects oversized or malformed data and strips unkno
     }],
   };
 
-  const parsed = parseDiscoveryPreferences(value);
+  assert.equal(parseDiscoveryPreferences(value), null);
+  const parsed = parseDiscoveryPreferences({
+    ...emptyDiscoveryPreferences(),
+    recentlyViewedBusinesses: [{
+      id: "biz",
+      slug: "biz",
+      name: "Business",
+      category: "Plumbing",
+      city: "Nairobi",
+      area: "CBD",
+      viewedAt: date(1).toISOString(),
+    }],
+  });
   assert.ok(parsed);
-  assert.equal("latitude" in parsed.recentlyViewedBusinesses[0], false);
   assert.equal(parseDiscoveryPreferences({
     ...emptyDiscoveryPreferences(),
     recentSearches: Array(11).fill({

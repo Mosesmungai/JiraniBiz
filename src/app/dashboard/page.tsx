@@ -9,13 +9,6 @@ import { getBusinessReviewQueue, getDashboardData } from "@/lib/store";
 import { getUserFromSession, SESSION_COOKIE } from "@/lib/auth";
 import { isSubscriptionEntitled, SUBSCRIPTION_PLANS } from "@/lib/subscription";
 
-const accessHierarchy = [
-  { role: "Admin", description: "Approves listings, monitors compliance and payment disputes." },
-  { role: "Business owner", description: "Manages profile, updates services, attends lead requests and reviews reports." },
-  { role: "Moderator", description: "Checks physical verification evidence and flags suspicious listings." },
-  { role: "Customer", description: "Searches, books, pays and leaves reviews after completion." },
-];
-
 export default async function DashboardPage() {
   const cookieStore = await cookies();
   const user = await getUserFromSession(cookieStore.get(SESSION_COOKIE)?.value);
@@ -33,9 +26,16 @@ export default async function DashboardPage() {
     till: process.env.MPESA_TILL_NUMBER?.trim() ?? "",
   };
   const overview = [
-    { label: "Customer leads", value: String(dashboard.leadCount) },
-    { label: "Business listings", value: String(dashboard.businessCount) },
-    { label: "Combined starting prices", value: `KES ${dashboard.totalRevenue.toLocaleString()}` },
+    { label: "Customer enquiries", value: String(dashboard.leadCount) },
+    { label: "Your listings", value: String(dashboard.businessCount) },
+    {
+      label: "Published listings",
+      value: String(dashboard.businesses.filter((business) => {
+        const entitled = business.subscription ? isSubscriptionEntitled(business.subscription) : false;
+        return business.publicationStatus === undefined ||
+          (business.publicationStatus === "published" && entitled);
+      }).length),
+    },
   ];
 
   const recentLeads = dashboard.leads.map((lead) => ({
@@ -57,7 +57,7 @@ export default async function DashboardPage() {
           </Link>
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-slate-600 sm:inline">{user.name}</span>
-            <Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Public profile</Link>
+            <Link href="/discover" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Browse marketplace</Link>
             <form action="/api/auth/logout" method="post"><button className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Sign out</button></form>
           </div>
         </div>
@@ -82,7 +82,6 @@ export default async function DashboardPage() {
               <div className="mb-6 flex items-center justify-between"><h2 className="text-xl font-semibold text-slate-900">Recent leads</h2></div>
               <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-[11px] uppercase tracking-[0.14em] text-slate-500"><tr><th className="px-4 py-3 font-medium">Customer</th><th className="px-4 py-3 font-medium">Business</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 font-medium">Date</th></tr></thead><tbody>{recentLeads.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-500">No leads yet. New customer requests will appear here.</td></tr> : recentLeads.map((lead) => <tr key={`${lead.name}-${lead.service}-${lead.time}`} className="border-t border-slate-200"><td className="px-4 py-4 font-medium text-slate-800">{lead.name}</td><td className="px-4 py-4">{lead.service}</td><td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${lead.status === "Booked" ? "bg-emerald-50 text-emerald-800" : lead.status === "Closed" ? "bg-slate-100 text-slate-700" : lead.status === "Contacted" ? "bg-sky-50 text-sky-800" : "bg-amber-50 text-amber-800"}`}>{lead.status}</span></td><td className="px-4 py-4">{lead.time}</td></tr>)}</tbody></table></div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]"><h2 className="text-lg font-semibold text-slate-900">Platform roles</h2><div className="mt-3 divide-y divide-slate-100">{accessHierarchy.map((item) => <div key={item.role} className="grid gap-1 py-3 sm:grid-cols-[150px_1fr] sm:gap-4"><div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.role}</div><div className="text-sm leading-6 text-slate-700">{item.description}</div></div>)}</div></div>
             {user.role === "admin" && <AdminReviewQueue businesses={reviewQueue} />}
             {user.role === "business_owner" && dashboard.businesses.length > 0 && (
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(20,48,43,0.04)]">
@@ -148,7 +147,13 @@ export default async function DashboardPage() {
               <Link href="#add-business" className="mt-4 inline-flex rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Add a business listing</Link>
               <Link href="/discover" className="ml-3 inline-flex rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Explore marketplace</Link>
             </div>
-            <div className="rounded-2xl border border-emerald-900/10 bg-[#173b37] p-5 text-white shadow-[0_12px_30px_rgba(20,48,43,0.12)]"><p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100">Listing snapshot</p><div className="mt-3 text-3xl font-semibold">KES {dashboard.totalRevenue.toLocaleString()}</div><p className="mt-2 text-sm leading-6 text-emerald-50/80">Combined starting prices across {dashboard.businessCount} listings. This is not booking revenue.</p></div>
+            <div className="rounded-2xl border border-emerald-900/10 bg-[#173b37] p-5 text-white shadow-[0_12px_30px_rgba(20,48,43,0.12)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-100">Keep your profile current</p>
+              <p className="mt-3 text-sm leading-6 text-emerald-50/90">Clear service details, up-to-date contact information, and location verification help customers choose with confidence.</p>
+              <Link href="#add-business" className="mt-4 inline-flex rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-[#173b37]">
+                {dashboard.businessCount ? "Manage listings" : "Create your first listing"}
+              </Link>
+            </div>
           </aside>
         </div>
       </main>
